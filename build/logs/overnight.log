@@ -1,0 +1,87 @@
+========================================
+  deadfish-teams overnight builder
+  Model: gpt-5.3-codex
+  Effort: high
+  Tasks: 7
+  Start from: 1
+  Dry run: false
+========================================
+
+──────────────────────────────────────
+[START] Task 1/7: Task 01: Plugin Scaffold
+  Prompt: 01-scaffold.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-01.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 1 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-01.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 2/7: Task 02: Copy Surviving Artifacts from deadfish-cli v1
+  Prompt: 02-copy-artifacts.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-02.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 2 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-02.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 3/7: Task 03: Agent Definitions — Brainstormer, Planner, Coder
+  Prompt: 03-agents-brainstorm-planner-coder.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-03.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 3 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-03.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 4/7: Task 04: Agent Definitions — QA Reviewer, Conductor, Doc-keeper
+  Prompt: 04-agents-qa-conductor-doc.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-04.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 4 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-04.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 5/7: Task 05: Write CLAUDE.md — Orchestrator Contract
+  Prompt: 05-claude-md.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-05.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 5 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-05.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 6/7: Task 06: Skills — Brainstorm, Verify, Reflect
+  Prompt: 06-skills.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-06.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 6 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-06.log
+  Finished: 2026-02-06 04:08:08
+
+──────────────────────────────────────
+[START] Task 7/7: Task 07: Hooks, README, and Validation
+  Prompt: 07-hooks-readme-validate.md
+  Log: /tank/dump/DEV/deadfish-teams/build/logs/task-07.log
+  Time: 2026-02-06 04:08:08
+
+[FAIL] Task 7 failed (exit code: 1)
+  Check log: /tank/dump/DEV/deadfish-teams/build/logs/task-07.log
+  Finished: 2026-02-06 04:08:08
+
+========================================
+  SUMMARY
+  Total: 7
+  Passed: 0
+  Failed: 7
+  Skipped: 0
+  Finished: 2026-02-06 04:08:08
+========================================
