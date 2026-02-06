@@ -1,0 +1,63 @@
+---
+name: deadfish-implement
+description: Implementation constraints, git conventions, Codex MCP usage.
+---
+
+# deadfish-implement — Implementation Protocol
+
+## Hard Constraints
+- Only modify files listed in TASK.FILES. Need a new file? Stop and ask Lead.
+- Follow TASK.COMMANDS exactly.
+- Run bin/verify.sh before reporting completion.
+- Maximum 3 fix cycles per task. On failure, produce failure report and stop.
+- Single commit per task: `"{task_id}: {short title}"`
+
+## Codex MCP Usage
+
+Start implementation:
+```
+Tool: mcp__codex-coder__codex
+Parameters:
+  prompt: "<TASK SUMMARY verbatim + FILES context>"
+  cwd: "/path/to/project"
+  sandbox: "workspace-write"
+```
+
+Continue if needed:
+```
+Tool: mcp__codex-coder__codex-reply
+Parameters:
+  prompt: "Fix: verify.sh reports <failure details>"
+  threadId: "<from previous response>"
+```
+
+## Implement Sentinel
+
+    ```deadfish:IMPLEMENT
+    task_id: auth-P1-T02
+    changed_files:
+      - path: src/auth/jwt.ts
+      - path: tests/auth/jwt.test.ts
+    summary: "Added JWT generation with RS256 signing and 15min expiry"
+    verify:
+      command: "bin/verify.sh"
+      result: PASS
+    notes: null
+    ```
+
+## Retry Protocol
+On retry (Lead sends QA feedback):
+1. Read verdict + failure details
+2. Append retry context AFTER SUMMARY (never replace original)
+3. Re-dispatch to Codex with enriched prompt
+4. Max 2 retries. After that → Conductor arbitration.
+
+## Integration (Integrator only)
+
+    ```deadfish:INTEGRATE
+    why_called: "T02 and T03 both modified src/auth/index.ts"
+    changes:
+      - "Merged export lists from both tasks"
+      - "Resolved import order conflict"
+    verify_sh: PASS
+    ```
