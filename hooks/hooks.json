@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/task-completed"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/teammate-idle"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/subagent-stop"
+          }
+        ]
+      }
+    ]
+  }
+}
