@@ -2,78 +2,170 @@
 
 > "Only a dead fish follows the flow."
 
-Autonomous development pipeline on Claude Code Agent Teams. Four layers, zero Ralph.
+**deadfish-teams** ports the **deadfish autonomous dev pipeline** into **Claude Code Agent Teams**.
 
-## Prerequisites
+Instead of “vibe coding until it works,” it gives you a *repeatable story*:
 
-- Claude Code CLI v2.1.32+
-- Codex CLI v0.75.0+ (`codex --version`)
-- OpenAI API key configured
-- Python 3.9+
-- Git
+1. You define a bounded goal.
+2. A team plans it.
+3. Another agent implements it.
+4. Verification gates decide if it ships, replans, or escalates.
 
-## Setup
+If you care about **quality, guardrails, and long-horizon execution**, this is the play.
 
-1. Enable Agent Teams:
+---
+
+## 🆕 Latest updates
+
+<!-- BEGIN:LAST_UPDATES -->
+_Last refreshed: 2026-02-06 10:14 UTC_
+
+- 2026-02-06 — feat: README + validation complete (d873801)
+- 2026-02-06 — feat: signal-only hooks (TaskCompleted, TeammateIdle, SubagentStop) (b7ad5c4)
+- 2026-02-06 — feat: CLAUDE.md v3 orchestrator contract (6df8106)
+- 2026-02-06 — feat: 7 agent definitions (v3 skills-first) (61e9fea)
+- 2026-02-06 — feat: 6 shared skills encoding deadfish invariants (e81259f)
+- 2026-02-06 — feat: copy templates + sentinel contracts from v1 (b5e89b5)
+- 2026-02-06 — feat: copy deterministic tools from deadfish-cli v1 (cc0662d)
+<!-- END:LAST_UPDATES -->
+
+---
+
+## Why this exists
+
+Most multi-agent workflows fail in predictable ways: context drift, inconsistent “implicit decisions,” and no hard stop when quality slips.
+
+**deadfish-teams** exists to make agentic development feel like an *engineered process*:
+- **State lives in files**, not in chat scrollback.
+- **Plans are explicit**, not implied.
+- **Verification is mandatory**, not optional.
+- The system knows when it’s stuck and **escalates**.
+
+---
+
+## What you get
+
+- **Claude Code Agent Teams** setup (Lead + specialized agents)
+- A **skills-first** design: update one skill → all agents improve
+- A consistent **plan → implement → verify → verdict** loop
+- A repo structure meant to survive long-running work
+
+---
+
+## Quick start (5 minutes)
+
+### Prerequisites
+
+- **Claude Code CLI** (Agent Teams enabled)
+- **Codex CLI** (OAuth / subscription login)
+- **Python 3**
+- **Git**
+
+> Note: The README you’re reading is written for our subscription/OAuth setup. If you’re using API keys, you can adapt it.
+
+### 1) Enable Agent Teams
+
 ```json
 // ~/.claude/settings.json
 { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
 ```
 
-2. Install plugin:
+### 2) Install the Claude Code plugin
+
 ```bash
 ln -s /tank/dump/DEV/deadfish-teams ~/.claude/plugins/deadfish-teams
 ```
 
-3. Set task list ID for crash-proof continuity:
+### 3) Start a new project session
+
+Open Claude Code inside your target repo, then paste the **Lead kickoff** prompt from [`CLAUDE.md`](./CLAUDE.md).
+
+---
+
+## How it works (the pipeline story)
+
+### The loop
+
+1. **Spec & plan** (bounded scope, acceptance criteria)
+2. **Implementation** (patch-sized changes)
+3. **Verification** (`verify.sh` + quality gates)
+4. **Verdict**
+   - ✅ ship
+   - 🔁 replan
+   - 🧑‍⚖️ needs_human
+
+### Roles (Agent Teams)
+
+```text
+Lead (delegate mode)
+├── Brainstormer     — generate options, name risks
+├── Planner          — produces a concrete plan + acceptance criteria
+├── Coder            — implements the plan
+├── QA Reviewer      — runs verification gates + reports failures
+├── Conductor        — arbitration / boundaries / “are we stuck?”
+└── Doc-keeper       — keeps the docs aligned with reality
+```
+
+### Skills-first
+
+Skills encode invariants (format, safety, verification, drift rules). Agents stay short and reference skills.
+
+---
+
+## Dynamic README updates
+
+This repo includes a script that keeps the **Latest updates** section fresh from git history.
+
 ```bash
-export CLAUDE_CODE_TASK_LIST_ID="deadfish-$(date +%Y%m%d)"
+./scripts/update_readme_latest_updates.sh --n 7
 ```
 
-4. Start Claude Code in your project and paste the Lead Kickoff Prompt from CLAUDE.md.
+Markers live in the README:
 
-## Architecture
+```md
+<!-- BEGIN:LAST_UPDATES -->
+_Last refreshed: 2026-02-06 10:14 UTC_
 
+- 2026-02-06 — feat: README + validation complete (d873801)
+- 2026-02-06 — feat: signal-only hooks (TaskCompleted, TeammateIdle, SubagentStop) (b7ad5c4)
+- 2026-02-06 — feat: CLAUDE.md v3 orchestrator contract (6df8106)
+- 2026-02-06 — feat: 7 agent definitions (v3 skills-first) (61e9fea)
+- 2026-02-06 — feat: 6 shared skills encoding deadfish invariants (e81259f)
+- 2026-02-06 — feat: copy templates + sentinel contracts from v1 (b5e89b5)
+- 2026-02-06 — feat: copy deterministic tools from deadfish-cli v1 (cc0662d)
+<!-- END:LAST_UPDATES -->
 ```
-Lead (Opus, delegate mode)
-├── Brainstormer (Opus)     — BMAD ideation, one-shot
-├── Planner (Sonnet)        — spec + plan via GPT-5.2, per track
-├── Coder (Sonnet)          — implementation via GPT-5.3-Codex, per track
-├── QA Reviewer (Sonnet)    — verify.sh + criteria, per track
-├── Conductor (Opus)        — boundary evaluation, persistent
-├── Doc-keeper (Haiku)      — living docs, persistent
-└── Integrator (Sonnet)     — cross-task friction, on-demand
-```
 
-## 4 Layers
+---
 
-| Layer | What | Where |
-|-------|------|-------|
-| State | Tasks + deps + status | Native task list |
-| Artifacts | Spec, plan, packets, docs | Git |
-| Protocol | deadfish sentinels + verify.sh | bin/ |
-| Roles | Permissions + prompts + skills | agents/ + skills/ |
+## Known limitations (right now)
 
-## Skills-First
+- Some “vNext” model names (ex: GPT‑5.3 variants) may not be available under subscription/OAuth rails yet.
+  - Verify availability before hardcoding model IDs.
+- The pipeline is only as good as the **verification gates** you enforce.
 
-6 shared skills encode deadfish invariants. Agents are short role prompts that reference skills. Update one skill → all agents improve.
+---
 
-| Skill | Encodes |
-|-------|---------|
-| deadfish-core | Universal invariants, sentinel format, escalation |
-| deadfish-planning | Spec/plan/task formats, GSD rules, drift |
-| deadfish-verify | verify.sh protocol, criteria rubric, verdict |
-| deadfish-implement | Codex MCP usage, git conventions, scope |
-| deadfish-docs | Living docs format, budgets, significance |
-| deadfish-conductor | Drift protocol, boundary eval, stuck arbitration |
+## Repo map
 
-## Dual Codex MCP
+- `agents/` — role prompts
+- `skills/` — procedural guardrails (the real brain)
+- `bin/` — verification + sentinel tooling
+- `templates/` — reusable prompt and artifact templates
+- `contracts/` — formats and conventions
+- `docs/` — longer docs
 
-| Instance | Model | Used by |
-|----------|-------|---------|
-| codex-planner | gpt-5.2 (reasoning: high) | Planner |
-| codex-coder | gpt-5.3-codex (reasoning: high) | Coder |
+---
 
-## Lineage
+## Contributing
 
-Port of [deadfish-cli](../deadfish-cli/) v1 from Bash+STATE.yaml to Agent Teams native. Same methodology (GSD + BMAD + Conductor), zero Ralph.
+If you contribute, keep it disciplined:
+- small PRs
+- acceptance criteria upfront
+- verification before merge
+
+---
+
+## License
+
+TBD.
