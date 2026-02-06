@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codex-planner": {
+      "command": "codex",
+      "args": ["mcp-server", "-m", "gpt-5.2", "-c", "model_reasoning_effort=\"high\""]
+    },
+    "codex-coder": {
+      "command": "codex",
+      "args": ["mcp-server", "-m", "gpt-5.3-codex", "-c", "model_reasoning_effort=\"high\""]
+    }
+  }
+}

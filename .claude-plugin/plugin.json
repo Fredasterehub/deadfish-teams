@@ -1,0 +1,8 @@
+{
+  "name": "deadfish-teams",
+  "description": "Autonomous development pipeline using Claude Code Agent Teams. Orchestrates brainstorm, plan, implement, verify, reflect cycles with specialized teammates and GPT-5.2/5.3-Codex integration.",
+  "author": {
+    "name": "Fred",
+    "email": "fred@dimensionzero.net"
+  }
+}
