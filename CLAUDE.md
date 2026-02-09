@@ -20,6 +20,7 @@
 | Role | Model | Lifecycle | Purpose |
 |------|-------|-----------|---------|
 | Lead | Opus | Persistent | Traffic cop. Delegate mode always. Only reads: Task Graph, Verdicts, Summaries. |
+| Discoverer | Sonnet | One-shot | Brownfield discovery pass. Detect + collect evidence + `docs/discovery.md`. |
 | Brainstormer | Opus | One-shot | BMAD ideation with human. Writes seed docs. No implementation. |
 | Planner | Sonnet | Per track | Spec + Plan + Task packets via GPT-5.2 (`codex-planner` MCP). |
 | Coder | Sonnet | Per track | Implements one packet at a time via GPT-5.3-Codex (`codex-coder` MCP). |
@@ -31,16 +32,18 @@
 ## Flow
 
 ### Phase 1: Brainstorm (human-in-loop)
-1. Lead spawns Brainstormer
-2. Human talks directly to Brainstormer (Shift+Down)
-3. Seed docs written → Brainstormer shuts down
-4. Lead reads artifacts (context clean)
+1. Lead runs `bin/discover-detect.sh`
+2. If result is `brownfield`: Lead spawns Discoverer → writes `docs/discovery.md`
+3. Lead spawns Brainstormer (include `docs/discovery.md` context when available)
+4. Human talks directly to Brainstormer (Shift+Down)
+5. Seed docs written → Brainstormer shuts down
+6. Lead reads artifacts (context clean)
 
 ### Phase 2: Autonomous (delegate mode)
 Lead presses Shift+Tab. For each track:
 
 **PLAN:** Spawn Planner → SPEC + PLAN + packets → Conductor evaluates → Planner shuts down
-**EXECUTE:** Lead converts Task Graph to native Tasks with dependencies. Coder claims → implements → QA verifies → Doc-keeper reflects. On 2x fail → Conductor arbitrates.
+**EXECUTE:** Lead converts Task Graph to native Tasks with dependencies. For each packet, Lead runs `bin/packet-to-task.py <packet_path>` and uses that output verbatim as the Task description. On retry, Lead appends QA feedback AFTER the original description. Coder claims → implements → QA verifies → Doc-keeper reflects. On 2x fail → Conductor arbitrates.
 **BOUNDARY:** Conductor evaluates track completion → CONTINUE | ADAPT | REPLAN | ESCALATE. Workers shut down. Next track.
 
 ## Lifecycle
@@ -69,13 +72,14 @@ Task list persists across session crashes and restarts.
 Paste this to start:
 
     Create an AGENT TEAM named "deadfish" with these teammates:
-    1) brainstormer: product ideation + writes track seed docs only
-    2) planner: writes SPEC + PLAN + TASK packets only
-    3) coder: implements TASK packets; runs bin/verify.sh; commits per task
-    4) qa-reviewer: runs bin/verify.sh + acceptance criteria checks; produces VERDICT
-    5) conductor: drift + boundary evaluation; produces CONDUCTOR verdicts
-    6) doc-keeper: updates living docs only after PASS verdict
-    7) integrator: resolves cross-task friction ONLY when requested by Lead
+    1) discoverer: one-shot brownfield discovery; writes docs/discovery.md
+    2) brainstormer: product ideation + writes track seed docs only
+    3) planner: writes SPEC + PLAN + TASK packets only
+    4) coder: implements TASK packets; runs bin/verify.sh; commits per task
+    5) qa-reviewer: runs bin/verify.sh + acceptance criteria checks; produces VERDICT
+    6) conductor: drift + boundary evaluation; produces CONDUCTOR verdicts
+    7) doc-keeper: updates living docs only after PASS verdict
+    8) integrator: resolves cross-task friction ONLY when requested by Lead
 
     Rules:
     - I (Lead) operate in delegate mode and will not edit code.
