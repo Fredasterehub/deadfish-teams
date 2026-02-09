@@ -1,0 +1,11 @@
+# Task Packets
+
+Canonical per-task implementation packets.
+
+## Deterministic Flow
+1. Update `plan.md` sentinel block.
+2. Run `python3 bin/plan-to-packets.py <plan_path>`.
+3. Generate task prompt via `python3 bin/packet-to-task.py <packet_path>`.
+
+## Naming
+- `<track_id>-P<phase>-T<nn>.md`

@@ -1,0 +1,19 @@
+# Plan
+
+## Task Checklist
+- [ ] T01 <task title>
+
+## Sentinel
+```deadfish:PLAN
+track_id: {{TRACK_ID}}
+base_commit: <7-40 lowercase hex>
+tasks:
+  - id: T01
+    title: <task title>
+    depends_on: []
+    packet_path: tracks/{{TRACK_DIR}}/task-packets/{{TRACK_ID}}-P1-T01.md
+```
+
+## Mirror Into Task Packets
+Run:
+`python3 bin/plan-to-packets.py tracks/{{TRACK_DIR}}/plan.md`
