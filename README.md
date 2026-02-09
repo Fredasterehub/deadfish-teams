@@ -7,175 +7,244 @@
 <h1 align="center">deadfish-teams</h1>
 
 <p align="center">
-  <strong>"Only a dead fish follows the flow."</strong>
+  <strong>"Only a dead fish follows the flow."</strong><br/>
+  <sub>An opinionated workflow for building real software with AI agent teams.</sub>
 </p>
 
 <p align="center">
-  An autonomous development pipeline that turns vibe coding<br/>
-  into an engineered, verifiable process.
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-0.0.0-blue?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=flat-square" alt="Version"/>
   <img src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node"/>
   <img src="https://img.shields.io/badge/python-3.x-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/license-TBD-lightgrey?style=flat-square" alt="License"/>
   <img src="https://img.shields.io/badge/tests-17%2F17_passing-brightgreen?style=flat-square" alt="Tests"/>
   <img src="https://img.shields.io/badge/agents-8_roles-blueviolet?style=flat-square" alt="Agents"/>
-  <img src="https://img.shields.io/badge/sentinel_types-11-orange?style=flat-square" alt="Sentinel Types"/>
+  <img src="https://img.shields.io/badge/license-TBD-lightgrey?style=flat-square" alt="License"/>
 </p>
 
 ---
 
-## The problem
+## The story
 
-You've seen it. Everyone has. You prompt an AI to build something, it writes code, you prompt again, it writes more code, and three hours later you're staring at a mess of half-working features with no tests, no plan, and no way to know what's actually done.
+This is my attempt at creating what I would consider an efficient and optimized workflow to help you develop any &mdash; or at least most &mdash; ideas you might have.
 
-**This is vibe coding.** It works for prototypes. It collapses on anything real.
+Over the last couple of months I've had the chance to play around and get great results from some amazing open-source projects:
 
-The failure modes are always the same:
-- **Context drift** — the agent forgets what it was building by turn 40
-- **Implicit decisions** — architecture choices buried in chat history, never written down
-- **No quality gate** — nothing stops bad code from piling up
-- **No crash recovery** — session dies, all progress lives in a dead conversation
+| Project | What caught my attention |
+|---------|------------------------|
+| [**BMAD Method**](https://github.com/bmadcode/BMAD-METHOD) | Structured brainstorming that actually converges. Not "generate 10 ideas" &mdash; a real ideation-to-requirements pipeline with roles. |
+| [**Oh My OpenCode**](https://github.com/nicekid1/Oh-my-OpenCode) | Showed me how far you can push a CLI dev tool with extensions and hooks. The composability was eye-opening. |
+| [**Google Conductor**](https://github.com/google-gemini/gemini-cli) | Gemini CLI's orchestration layer. Proved multi-agent coordination is real &mdash; but also exposed the gap: zero context management. |
+| [**GSD &mdash; Get Shit Done**](https://github.com/cline/gsd-protocol) | The one that's almost king. Plans-as-prompts, task packets, verification gates. The closest thing to "engineering discipline for AI coding." |
 
-deadfish-teams exists because we got tired of this.
+I tried to combine the different strengths of each and improve from the combination of all the concepts together. The result is deadfish-teams.
 
 ---
 
-## The fix
+## What I took from each
 
-What if your AI development workflow worked like an **engineering team** instead of a chat session?
+**From BMAD:** the brainstorming pipeline. Deadfish doesn't just ask "what should we build?" &mdash; it runs a structured ideation process (7 brainstorm templates) that produces a real spec with acceptance criteria. Not vibes. Requirements.
+
+**From OpenCode:** the plugin architecture. Deadfish installs as a Claude Code plugin with hooks, skills, and agent definitions. Composable, swappable, upgradeable without losing your customizations.
+
+**From Conductor:** multi-agent coordination. But where Conductor stops at orchestration, deadfish adds **drift detection** (a dedicated Conductor agent that watches for scope creep) and **crash recovery** (tasks persist across sessions).
+
+**From GSD:** almost everything structural. Plans-as-prompts, task packets, deterministic verification, scope limits. GSD is the backbone. What deadfish adds on top: **multi-model routing** (5 different models matched to roles), **living documentation** (7 budget-capped docs maintained automatically), and a **structured protocol** (11 sentinel types with schemas, not free-form text).
+
+---
+
+## What you actually get
 
 ```
-You define a bounded goal
-    → a team plans it (with acceptance criteria)
-        → another agent implements it (patch-sized, scoped)
-            → verification gates decide: ship, replan, or escalate
+You define a goal with acceptance criteria
+    a team of 8 AI agents plans it
+        another agent implements it (patch-sized, scoped)
+            a verification script decides: ship, replan, or escalate
 ```
 
-That's deadfish. Not a framework. Not a wrapper. A **protocol** — a set of rules that multiple AI models follow to produce reliable software, with deterministic verification that no amount of LLM confidence can override.
+That loop &mdash; **plan, implement, verify, verdict** &mdash; runs for every task. No exceptions. The verification script (`verify.sh`) is law: if it says FAIL, no amount of LLM confidence overrides it.
 
-<p align="center">
-  <code>plan &rarr; implement &rarr; verify &rarr; verdict &rarr; repeat</code>
-</p>
+Your agents use different models for different jobs:
 
----
+```
+Lead (Opus)            strategic delegation, never touches code
+Brainstormer (Opus)    BMAD-style ideation with the human
+Planner (GPT-5.2)      structured decomposition into task packets
+Coder (GPT-5.3-Codex)  fastest code generation, scoped to one task
+QA (Sonnet)            pessimistic by design, runs the hard gate
+Conductor (Opus)       drift detection, "are we building the right thing?"
+Doc-keeper (Haiku)     maintains 7 living docs, budget-capped
+Discoverer (Sonnet)    brownfield detection before planning starts
+```
 
-## Latest changes
-
-<!-- BEGIN:LAST_UPDATES -->
-_Last refreshed: 2026-02-09 03:26 UTC_
-
-- 2026-02-09 &mdash; feat: Round 4 &mdash; npx installer, config gen, settings hooks, tests (efd7330)
-- 2026-02-09 &mdash; fix: port repair template to v3 + align sentinel type lists (1caf039)
-- 2026-02-09 &mdash; feat: Round 3 &mdash; discovery, tests, bootstrap, e2e smoke (1a696eb)
-- 2026-02-09 &mdash; feat: Round 2 &mdash; v3 tooling + active templates (c607ede)
-- 2026-02-09 &mdash; feat: Round 1 &mdash; v3 protocol foundation (e54b83e)
-- 2026-02-06 &mdash; docs(readme): narrative README + latest updates section (fdab308)
-- 2026-02-06 &mdash; feat: README + validation complete (d873801)
-<!-- END:LAST_UPDATES -->
-
-> This section auto-refreshes from git history. Run `./scripts/update_readme_latest_updates.sh --n 7` to update it.
+State lives in files and tasks, not chat history. Session crashes? Reopen. The task list is still there.
 
 ---
 
-## How it works
+## Get started
 
-### Three ideas, fused
+### Install
 
-deadfish-teams is a fusion of three concepts that don't normally appear together:
+```bash
+# From a git clone (npm publish coming soon)
+git clone https://github.com/Fredasterehub/deadfish-teams.git
+node deadfish-teams/bin/install.js --local
+```
 
-| Concept | What it means here |
-|---------|-------------------|
-| **Claude Code Agent Teams** | 8 specialized AI agents with distinct roles, models, and permissions &mdash; coordinated through Claude's native task system |
-| **Deterministic verification** | A shell script (`verify.sh`) whose exit code is **ground truth**. If the script says FAIL, the LLM's opinion is irrelevant. |
-| **Multi-model routing** | Different models for different jobs: Opus for strategy, Sonnet for execution, Haiku for maintenance, GPT-5.2 for planning, GPT-5.3-Codex for implementation |
+The installer copies the plugin into `.claude/plugins/deadfish-teams/`, generates your config, and registers hooks. Five questions if you run `init` interactively; sensible defaults if you pass flags.
 
-The result is a pipeline where AI agents don't just *write* code &mdash; they **plan** it against acceptance criteria, **implement** it within strict scope limits, **verify** it with deterministic tools, and **decide** whether it ships based on evidence, not vibes.
+<details>
+<summary><strong>All installer options</strong></summary>
 
-### The pipeline loop
+```bash
+node bin/install.js init                          # interactive setup
+node bin/install.js --global                      # install to ~/.claude/plugins/deadfish-teams
+node bin/install.js --local                       # install to ./.claude/plugins/deadfish-teams
+node bin/install.js --local --provider hybrid     # with overrides
+node bin/install.js --uninstall                   # clean removal
+node bin/install.js --local --dry-run             # preview without writing
+```
+
+**Interactive questions:** scope, provider routing (`anthropic-only` | `codex-mcp` | `hybrid`), model preferences (planner/coder/QA), brownfield detection toggle, task list ID pattern.
+
+**Upgrade safety:** reinstalling backs up any file you've modified before overwriting. Backups go to `.deadfish-install/backups/<timestamp>/` inside the plugin root.
+
+</details>
+
+### Prerequisites
+
+You need [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with Agent Teams enabled, [Python 3](https://python.org) with PyYAML, and [Git](https://git-scm.com). If using multi-model routing, you'll also need [Codex CLI](https://github.com/openai/codex).
+
+```bash
+# Enable Agent Teams (add to ~/.claude/settings.json)
+{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
+
+# Python deps
+pip install pyyaml
+```
+
+### Run it
+
+```bash
+cd your-project
+claude
+```
+
+Paste the kickoff prompt from [`CLAUDE.md`](./CLAUDE.md), press **Shift+Tab** for delegate mode, then give it a goal:
+
+```
+Plan and implement user authentication with JWT.
+Acceptance criteria:
+- AC-01: Login endpoint returns signed JWT
+- AC-02: Protected routes reject expired tokens
+- AC-03: Refresh token rotation works
+```
+
+The team handles the rest: discovery pass, spec, plan, task packets, implementation, verification, verdict. You approve or redirect at each stage.
+
+---
+
+## How it's different
+
+I keep getting asked "why not just use X?" Fair question. Here's the honest answer:
+
+| | Vibe coding | GSD alone | deadfish-teams |
+|---|---|---|---|
+| **State** | Chat history (gone on crash) | Git artifacts | Git artifacts + persistent task list |
+| **Quality gate** | "Looks good to me" | verify.sh | verify.sh + 3-tier rubric (EXISTS/SUBSTANTIVE/WIRED) |
+| **Models** | One model does everything | One model | 5 models, role-matched |
+| **Docs** | None | None | 7 living docs, budget-capped, auto-maintained |
+| **Drift detection** | None | None | Dedicated Conductor agent |
+| **Brownfield** | None | None | Discovery pass before planning |
+| **Scope enforcement** | Hope | Diff budget | Diff budget + file scope + blocked-file lists |
+
+Deadfish doesn't replace GSD &mdash; it builds on it. If you're happy with GSD, you'll probably like this too.
+
+---
+
+## Under the hood
+
+The sections below go deeper into the architecture. You don't need to read them to use deadfish, but they're here if you want to understand or customize it.
+
+<details>
+<summary><strong>The pipeline loop</strong></summary>
 
 Every unit of work follows the same cycle:
 
 ```
-                    ┌─────────────────────────┐
-                    │   1. SPEC & PLAN        │
-                    │   bounded scope          │
-                    │   acceptance criteria     │
-                    │   task graph              │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   2. IMPLEMENT           │
-                    │   one task at a time     │
-                    │   ≤200 lines, ≤5 files   │
-                    │   git commit per task     │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   3. VERIFY              │
-                    │   verify.sh (det.)       │
-                    │   + criteria fan-out     │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   4. VERDICT             │
-                    │                          │
-                    │   ✅ ship                │
-                    │   🔁 replan              │
-                    │   🧑‍⚖️ needs_human         │
-                    └──────────────────────────┘
+    ┌─────────────────────────┐
+    │   1. SPEC & PLAN        │
+    │   bounded scope          │
+    │   acceptance criteria     │
+    │   task graph              │
+    └────────────┬────────────┘
+                 │
+    ┌────────────▼────────────┐
+    │   2. IMPLEMENT           │
+    │   one task at a time     │
+    │   ≤200 lines, ≤5 files   │
+    │   git commit per task     │
+    └────────────┬────────────┘
+                 │
+    ┌────────────▼────────────┐
+    │   3. VERIFY              │
+    │   verify.sh (det.)       │
+    │   + criteria fan-out     │
+    └────────────┬────────────┘
+                 │
+    ┌────────────▼────────────┐
+    │   4. VERDICT             │
+    │   ship / replan /        │
+    │   needs_human            │
+    └──────────────────────────┘
 ```
 
-**The key insight:** tasks are the scheduler. No orchestrator loop, no cron, no external state machine. Claude Code's native task list (Ctrl+T) drives all work. Session crashes? Reopen. The task list is still there.
+**Tasks are the scheduler.** No orchestrator loop, no cron, no state machine. Claude Code's native task list (`Ctrl+T`) drives all work. Dependencies between tasks are explicit. Session dies? Reopen &mdash; the task list survives.
 
-### The team
+</details>
 
-Eight agents. Each has a role, a model, and boundaries it cannot cross.
+<details>
+<summary><strong>The four layers</strong></summary>
 
 ```
-Lead (Opus) ─── delegate mode, never touches code
-│
-├── Discoverer (Sonnet)     brownfield detection, one-shot
-├── Brainstormer (Opus)     BMAD ideation with human
-├── Planner (Sonnet)        spec + plan + task packets via GPT-5.2
-├── Coder (Sonnet)          implements tasks via GPT-5.3-Codex
-├── QA Reviewer (Sonnet)    verify.sh + criteria → verdict
-├── Conductor (Opus)        drift detection, stuck arbitration
-├── Doc-keeper (Haiku)      living docs, significance-gated
-└── Integrator (Sonnet)     cross-task friction, on-demand only
+┌───────────────────────────────────────────────────┐
+│  LAYER 4: ROLES                                   │
+│  8 agents + 7 skills + tool permissions            │
+├───────────────────────────────────────────────────┤
+│  LAYER 3: PROTOCOL                                │
+│  11 sentinel types + schemas + parse-blocks.py     │
+├───────────────────────────────────────────────────┤
+│  LAYER 2: ARTIFACTS                               │
+│  Git-tracked: spec, plan, packets, verdicts, docs  │
+├───────────────────────────────────────────────────┤
+│  LAYER 1: STATE                                   │
+│  Claude Code Tasks (Ctrl+T) — deps + status        │
+└───────────────────────────────────────────────────┘
 ```
 
-| Agent | Model | Why this model | What it cannot do |
-|-------|-------|----------------|-------------------|
-| **Lead** | Opus | Needs strategic judgment to delegate | Edit code, read logs, run tools |
-| **Discoverer** | Sonnet | Fast evidence collection | Modify any files |
-| **Brainstormer** | Opus | Creative ideation needs depth | Write implementation code |
-| **Planner** | GPT-5.2 | Strong at structured decomposition | Implement, test, or commit |
-| **Coder** | GPT-5.3-Codex | Fastest code generation | Skip verify.sh, modify specs |
-| **QA** | Sonnet | Pessimistic judgment is a feature | Optimistically approve |
-| **Conductor** | Opus | Needs full-context reasoning for drift | Write code or modify tasks |
-| **Doc-keeper** | Haiku | Fast, cheap, significance-gated | Update docs without a PASS verdict |
-| **Integrator** | Sonnet | Surgical cross-task fixes | Redesign architecture |
+**Layer 1** is the scheduler. **Layer 2** is the memory. **Layer 3** is the language. **Layer 4** is the team.
 
-### Skills-first design
+</details>
 
-Instead of stuffing each agent with a massive system prompt, deadfish encodes its rules as **shared skills**. Update one skill, every agent that references it improves immediately.
+<details>
+<summary><strong>Skills-first design</strong></summary>
 
-| Skill | Encodes |
-|-------|---------|
-| `deadfish-core` | Universal invariants: verify.sh is truth, acceptance criteria are immutable, tasks are the scheduler |
-| `deadfish-planning` | Spec format, plan format, task packets, scope limits (≤200 lines, ≤5 files) |
-| `deadfish-verify` | verify.sh protocol, criteria rubric (EXISTS / SUBSTANTIVE / WIRED), verdict format |
-| `deadfish-implement` | Git commit conventions, retry protocol, Codex MCP usage |
-| `deadfish-docs` | Living docs format, 7 files with character budgets, significance gate |
-| `deadfish-conductor` | Drift detection protocol, boundary evaluation, stuck arbitration flowchart |
-| `deadfish-discovery` | Brownfield detection, evidence collection, `discovery.md` output |
+Instead of massive system prompts per agent, deadfish encodes rules as **shared skills**. Update one skill and every agent that references it improves.
 
-### The sentinel protocol
+| Skill | What it encodes |
+|-------|----------------|
+| [`deadfish-core`](./skills/deadfish-core/SKILL.md) | verify.sh is truth, acceptance criteria are immutable, tasks are the scheduler |
+| [`deadfish-planning`](./skills/deadfish-planning/SKILL.md) | Spec/plan/packet format, scope limits (≤200 lines, ≤5 files) |
+| [`deadfish-verify`](./skills/deadfish-verify/SKILL.md) | verify.sh protocol, 3-tier rubric (EXISTS/SUBSTANTIVE/WIRED), verdict format |
+| [`deadfish-implement`](./skills/deadfish-implement/SKILL.md) | Git conventions, retry protocol, Codex MCP usage |
+| [`deadfish-docs`](./skills/deadfish-docs/SKILL.md) | 7 living doc files with character budgets, significance gate |
+| [`deadfish-conductor`](./skills/deadfish-conductor/SKILL.md) | Drift detection, boundary evaluation, stuck arbitration |
+| [`deadfish-discovery`](./skills/deadfish-discovery/SKILL.md) | Brownfield detection, evidence collection |
 
-All structured communication between agents uses **sentinel blocks** &mdash; markdown code fences with typed YAML content:
+</details>
+
+<details>
+<summary><strong>The sentinel protocol</strong></summary>
+
+Agents communicate structured data through **sentinel blocks** &mdash; markdown code fences with typed YAML:
 
 ````markdown
 ```deadfish:VERDICT
@@ -190,269 +259,80 @@ decision: PASS
 ```
 ````
 
-Eleven types, each with a schema: `SPEC`, `PLAN`, `TASK`, `TRACK`, `VERDICT`, `VERDICT_CRITERION`, `CONDUCTOR`, `DOCSYNC`, `IMPLEMENT`, `INTEGRATE`, `DIAGNOSTIC`.
+**11 types**, each with a [schema](./contracts/sentinel/v3/schemas.yaml): `SPEC`, `PLAN`, `TASK`, `TRACK`, `VERDICT`, `VERDICT_CRITERION`, `CONDUCTOR`, `DOCSYNC`, `IMPLEMENT`, `INTEGRATE`, `DIAGNOSTIC`.
 
-Agents parse them with `bin/parse-blocks.py`. Verdicts aggregate with `bin/build-verdict.py`. The schemas live in `contracts/sentinel/v3/schemas.yaml`. If a block doesn't validate, it's a protocol error &mdash; not a matter of opinion.
+Parsed by [`bin/parse-blocks.py`](./bin/parse-blocks.py). Verdicts aggregated by [`bin/build-verdict.py`](./bin/build-verdict.py). If a block doesn't validate against the schema, it's a protocol error &mdash; not a matter of opinion.
 
----
+</details>
 
-## Install
+<details>
+<summary><strong>Verification: the hard gate</strong></summary>
 
-### One command
-
-```bash
-npx deadfish-teams init
-```
-
-The interactive installer asks you five questions:
-
-1. **Scope** &mdash; global (`~/.claude/`) or local (`./.claude/`)
-2. **Provider routing** &mdash; `anthropic-only`, `codex-mcp`, or `hybrid`
-3. **Model preferences** &mdash; which models for planner, coder, and QA
-4. **Brownfield detection** &mdash; enable auto-detection of existing codebases
-5. **Task list ID pattern** &mdash; naming convention for persistent task lists
-
-Or skip the questions:
-
-```bash
-npx deadfish-teams --global                      # defaults, global scope
-npx deadfish-teams --local --provider hybrid     # local, hybrid routing
-npx deadfish-teams --uninstall                   # clean removal
-npx deadfish-teams --local --dry-run             # preview without writing
-```
-
-### What gets installed
-
-```
-~/.claude/plugins/deadfish-teams/     # (or ./.claude/plugins/...)
-├── agents/                           # 8 role definitions
-├── skills/                           # 7 shared skill files
-├── templates/                        # bootstrap + task + verify templates
-├── contracts/sentinel/v3/            # protocol schemas
-├── bin/                              # deterministic tools (Python + Shell)
-├── hooks/                            # lifecycle event scripts
-├── docs/living/                      # 7 living doc files + scratch buffer
-├── CLAUDE.md                         # orchestrator contract
-├── deadfish.config.yaml              # your model + provider choices
-├── .mcp.json                         # Codex MCP server config (if applicable)
-└── .deadfish-install/
-    ├── manifest.json                 # SHA-256 hashes of every installed file
-    └── backups/<timestamp>/          # your edits, preserved on upgrade
-```
-
-**Upgrade safety:** reinstalling backs up any file you've modified before overwriting. Your edits are never lost.
-
-### Prerequisites
-
-| Requirement | Why |
-|-------------|-----|
-| **Node.js >= 18** | Installer runtime |
-| **Claude Code CLI** | Agent Teams host |
-| **Codex CLI** | MCP server for GPT-5.x models (if using `codex-mcp` or `hybrid`) |
-| **Python 3 + PyYAML** | Sentinel parsing and verification tools |
-| **Git** | Task tracking, diff analysis, scope enforcement |
-
-```bash
-# Enable Agent Teams (required)
-# Add to ~/.claude/settings.json:
-{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-
-# Install Python deps
-pip install pyyaml
-```
-
-> **Dev checkout?** If you're hacking on deadfish-teams itself, symlink instead:
-> `ln -s /path/to/deadfish-teams ~/.claude/plugins/deadfish-teams`
-
----
-
-## Quick start
-
-### 1. Install
-
-```bash
-npx deadfish-teams init
-```
-
-### 2. Open your project in Claude Code
-
-```bash
-cd your-project
-claude
-```
-
-### 3. Spawn the team
-
-Paste the kickoff prompt from [`CLAUDE.md`](./CLAUDE.md), or use this minimal version:
-
-```
-Create an AGENT TEAM named "deadfish" with these teammates:
-  discoverer, brainstormer, planner, coder, qa-reviewer,
-  conductor, doc-keeper, integrator
-
-Rules:
-- I (Lead) operate in delegate mode. I will not edit code.
-- All work is represented as Tasks with dependencies.
-- Deterministic truth is bin/verify.sh output.
-- Use deadfish sentinel code fences for structured outputs.
-
-Spawn the teammates and wait for my instruction.
-```
-
-Then press **Shift+Tab** to enter delegate mode.
-
-### 4. Give it a goal
-
-```
-Plan and implement user authentication with JWT.
-Acceptance criteria:
-- AC-01: Login endpoint returns signed JWT
-- AC-02: Protected routes reject expired tokens
-- AC-03: Refresh token rotation works
-```
-
-The team takes it from there: discovery pass, spec, plan, task packets, implementation, verification, verdict. You approve or redirect at each stage.
-
----
-
-## What makes this different
-
-### vs. "just prompting Claude"
-
-| | Plain prompting | deadfish-teams |
-|---|---|---|
-| State | Chat history (lost on crash) | Git-tracked files + persistent task list |
-| Quality gate | "Looks good to me" | `verify.sh` exit code is law |
-| Scope control | Hope the LLM stays focused | ≤200 lines, ≤5 files, enforced |
-| Recovery | Start over | Reopen session, task list intact |
-| Architecture | Implicit in the conversation | Explicit spec + plan, immutable once approved |
-
-### vs. Aider / OpenHands / other coding agents
-
-| Capability | Aider | OpenHands | deadfish-teams |
-|-----------|-------|-----------|----------------|
-| Multi-model routing | Single model | Single model | 5 models, role-matched |
-| Deterministic verification | None (LLM judgment) | Partial | `verify.sh` is ground truth |
-| Living documentation | None | None | 7 docs, budget-capped, significance-gated |
-| Drift detection | None | None | Conductor agent with boundary evaluation |
-| Crash recovery | Git-based | Checkpoint-based | Task list persistence + git artifacts |
-| Brownfield awareness | None | None | Discovery pass before planning |
-| Structured protocol | None | None | 11 sentinel types with schemas |
-
----
-
-## Architecture deep dive
-
-### The four layers
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  LAYER 4: ROLES                                         │
-│  8 agent definitions + 7 skills + tool permissions      │
-├─────────────────────────────────────────────────────────┤
-│  LAYER 3: PROTOCOL                                      │
-│  11 sentinel types + schemas.yaml + parse-blocks.py     │
-├─────────────────────────────────────────────────────────┤
-│  LAYER 2: ARTIFACTS                                     │
-│  Git-tracked files: spec, plan, packets, conductor      │
-│  state, living docs, verdicts                           │
-├─────────────────────────────────────────────────────────┤
-│  LAYER 1: STATE                                         │
-│  Claude Code Tasks (Ctrl+T) — deps, status, assignment  │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Layer 1** is the scheduler. **Layer 2** is the memory. **Layer 3** is the language. **Layer 4** is the team.
-
-### Verification: the hard gate
-
-`verify.sh` runs deterministic checks that no agent can override:
+[`verify.sh`](./bin/verify.sh) runs deterministic checks no agent can override:
 
 | Check | What it catches |
 |-------|----------------|
-| **Tests** | Test suite must pass |
-| **Linter** | Code style violations |
-| **Diff budget** | Changes exceeding 3x the estimated diff size |
-| **Scope** | Files modified outside the task's declared scope |
-| **Secrets** | Credentials or API keys in the diff |
-| **Git clean** | Uncommitted changes (post-commit mode) |
+| Tests | Test suite must pass |
+| Linter | Style violations |
+| Diff budget | Changes exceeding 3x estimated size |
+| Scope | Files modified outside declared scope |
+| Secrets | Credentials in the diff |
+| Git clean | Uncommitted changes (post-commit mode) |
 
-Output is structured JSON. Exit code 0 always (result in the `pass` field). This means agents can always parse the output &mdash; they don't need to handle crashed verification scripts.
-
-On top of verify.sh, the QA agent evaluates each acceptance criterion against a three-tier rubric:
+On top of that, the QA agent evaluates each acceptance criterion with a **three-tier rubric**:
 
 - **EXISTS** &mdash; the artifact appears in the diff
-- **SUBSTANTIVE** &mdash; it's real code, not a TODO or stub
-- **WIRED** &mdash; it's connected (imported, routed, configured, tested)
+- **SUBSTANTIVE** &mdash; real code, not a TODO or stub
+- **WIRED** &mdash; connected into the system (imported, routed, tested)
 
 All three must pass. The system is intentionally pessimistic: false negatives are OK, false positives are expensive.
 
-### Living docs: bounded, not bloated
+</details>
+
+<details>
+<summary><strong>Living docs</strong></summary>
 
 Seven documentation files maintained by the Doc-keeper agent, each with a **character budget**:
 
-| Doc | Budget | Tracks |
-|-----|--------|--------|
-| `TECH_STACK.md` | 3,200 chars | Languages, frameworks, versions |
-| `PATTERNS.md` | 3,200 chars | Architecture patterns, conventions |
-| `PITFALLS.md` | 2,800 chars | Known gotchas, anti-patterns |
-| `RISKS.md` | 2,000 chars | Security, operational risks |
-| `PRODUCT.md` | 2,800 chars | Features, API surface |
-| `WORKFLOW.md` | 2,800 chars | CI/CD, scripts, dev workflow |
-| `GLOSSARY.md` | 2,000 chars | Domain terms, naming |
+| File | Budget | Tracks |
+|------|--------|--------|
+| [`TECH_STACK.md`](./docs/living/TECH_STACK.md) | 3,200 | Languages, frameworks, versions |
+| [`PATTERNS.md`](./docs/living/PATTERNS.md) | 3,200 | Architecture patterns, conventions |
+| [`PITFALLS.md`](./docs/living/PITFALLS.md) | 2,800 | Known gotchas |
+| [`RISKS.md`](./docs/living/RISKS.md) | 2,000 | Security & operational risks |
+| [`PRODUCT.md`](./docs/living/PRODUCT.md) | 2,800 | Features, API surface |
+| [`WORKFLOW.md`](./docs/living/WORKFLOW.md) | 2,800 | CI/CD, scripts |
+| [`GLOSSARY.md`](./docs/living/GLOSSARY.md) | 2,000 | Domain terms |
 
-Total budget: ~18,800 characters. Updates only happen after a PASS verdict and only when significance triggers fire (manifest changed, diff > 120 lines, new pattern discovered, etc.). A scratch buffer (`docs/living/.scratch.yaml`) holds observations that haven't reached the significance threshold yet.
+Total: ~18,800 chars. Updates only happen after a PASS verdict **and** a significance trigger (manifest change, large diff, new pattern, etc.). A [scratch buffer](./docs/living/.scratch.yaml) holds observations below the significance threshold.
 
----
+</details>
 
-## Repo map
+<details>
+<summary><strong>Agent roster (full)</strong></summary>
 
-```
-deadfish-teams/
-├── agents/                    # 8 agent role definitions
-│   ├── brainstormer.md
-│   ├── coder.md
-│   ├── conductor.md
-│   ├── discoverer.md
-│   ├── doc-keeper.md
-│   ├── integrator.md
-│   ├── planner.md
-│   └── qa-reviewer.md
-├── skills/                    # 7 shared skills (the real brain)
-│   ├── deadfish-core/
-│   ├── deadfish-planning/
-│   ├── deadfish-verify/
-│   ├── deadfish-implement/
-│   ├── deadfish-docs/
-│   ├── deadfish-conductor/
-│   └── deadfish-discovery/
-├── contracts/sentinel/v3/     # protocol schemas + type contracts
-├── templates/                 # bootstrap, task, track, verify, repair
-├── bin/                       # deterministic tools
-│   ├── verify.sh              #   the hard gate
-│   ├── parse-blocks.py        #   sentinel parser
-│   ├── build-verdict.py       #   verdict aggregator
-│   ├── packet-to-task.py      #   task packet → prompt
-│   ├── discover-detect.sh     #   brownfield classifier
-│   ├── discover-collect.sh    #   evidence collector
-│   └── installer/             #   npx install machinery
-├── hooks/                     # lifecycle event scripts
-├── docs/living/               # 7 budget-capped living docs
-├── scripts/                   # repo maintenance utilities
-├── tests/                     # smoke + installer test suites
-├── CLAUDE.md                  # orchestrator contract
-├── package.json               # npm manifest
-└── requirements.txt           # Python dependencies (pyyaml)
-```
+| Agent | Model | Why this model | Boundaries |
+|-------|-------|----------------|------------|
+| **Lead** | Opus | Strategic judgment | Cannot edit code, read logs, or run tools |
+| **Discoverer** | Sonnet | Fast evidence collection | Cannot modify files |
+| **Brainstormer** | Opus | Creative depth | Cannot write implementation code |
+| **Planner** | GPT-5.2 via MCP | Structured decomposition | Cannot implement, test, or commit |
+| **Coder** | GPT-5.3-Codex via MCP | Fastest code generation | Cannot skip verify.sh or modify specs |
+| **QA** | Sonnet | Pessimistic judgment is a feature | Cannot optimistically approve |
+| **Conductor** | Opus | Full-context drift reasoning | Cannot write code or modify tasks |
+| **Doc-keeper** | Haiku | Fast, cheap, gated | Cannot update docs without PASS verdict |
+| **Integrator** | Sonnet | Surgical cross-task fixes | Cannot redesign architecture |
 
----
+Agent definitions live in [`agents/`](./agents/). Each is a short markdown file that references shared skills.
 
-## Configuration
+</details>
 
-The installer generates two config files:
+<details>
+<summary><strong>Configuration reference</strong></summary>
 
-### `deadfish.config.yaml`
+The installer generates two files in the plugin root:
 
+**`deadfish.config.yaml`** &mdash; your choices:
 ```yaml
 install:
   scope: 'global'
@@ -466,8 +346,7 @@ features:
 task_list_id_pattern: 'deadfish-YYYYMMDD'
 ```
 
-### `.mcp.json` (generated for `codex-mcp` and `hybrid` providers)
-
+**`.mcp.json`** &mdash; Codex MCP servers (for `codex-mcp` and `hybrid` providers):
 ```json
 {
   "mcpServers": {
@@ -483,50 +362,81 @@ task_list_id_pattern: 'deadfish-YYYYMMDD'
 }
 ```
 
-For `anthropic-only` provider, `.mcp.json` contains an empty `mcpServers` object and all agents use Anthropic models directly.
+For `anthropic-only` mode, no MCP servers are configured &mdash; all agents use Claude directly.
+
+</details>
+
+<details>
+<summary><strong>Repo map</strong></summary>
+
+```
+deadfish-teams/
+├── agents/                    8 role definitions (.md)
+├── skills/                    7 shared skills (the real brain)
+├── contracts/sentinel/v3/     protocol schemas + type contracts
+├── templates/                 bootstrap, task, track, verify, repair
+├── bin/                       deterministic tools
+│   ├── verify.sh                the hard gate
+│   ├── parse-blocks.py          sentinel parser
+│   ├── build-verdict.py         verdict aggregator
+│   ├── packet-to-task.py        task packet to prompt
+│   ├── discover-detect.sh       brownfield classifier
+│   ├── discover-collect.sh      evidence collector
+│   └── installer/               npx install machinery
+├── hooks/                     lifecycle event scripts
+├── docs/living/               7 budget-capped living docs
+├── tests/                     smoke + installer test suites
+├── CLAUDE.md                  orchestrator contract
+├── package.json               npm manifest
+└── requirements.txt           Python deps (pyyaml)
+```
+
+</details>
+
+---
+
+## Latest changes
+
+<!-- BEGIN:LAST_UPDATES -->
+_Last refreshed: 2026-02-09 08:40 UTC_
+
+- 2026-02-09 &mdash; chore: clean repo for public release + new README (0a4c215)
+- 2026-02-09 &mdash; feat: Round 4 &mdash; npx installer, config gen, settings hooks, tests (efd7330)
+- 2026-02-09 &mdash; fix: port repair template to v3 + align sentinel type lists (1caf039)
+- 2026-02-09 &mdash; feat: Round 3 &mdash; discovery, tests, bootstrap, e2e smoke (1a696eb)
+- 2026-02-09 &mdash; feat: Round 2 &mdash; v3 tooling + active templates (c607ede)
+- 2026-02-09 &mdash; feat: Round 1 &mdash; v3 protocol foundation (e54b83e)
+<!-- END:LAST_UPDATES -->
+
+<sub>Auto-refreshed from git history. Run `./scripts/update_readme_latest_updates.sh --n 7` to update.</sub>
+
+---
+
+## Known limitations
+
+- **Agent Teams is experimental** &mdash; requires the env flag above
+- **GPT-5.3 model availability** &mdash; verify your subscription tier supports the model IDs you configure
+- **No context budget management yet** &mdash; long sessions may hit token limits
+- **The pipeline is only as good as your verification gates** &mdash; invest in your test suite
 
 ---
 
 ## Tests
 
 ```bash
-# v3 protocol smoke tests (10 cases)
-bash tests/smoke-run.sh
-
-# installer tests (7 cases)
-bash tests/test-installer.sh
+bash tests/smoke-run.sh       # 10 protocol tests
+bash tests/test-installer.sh  # 7 installer tests
 ```
-
-Both suites run in isolated temp directories and clean up after themselves.
-
----
-
-## Known limitations
-
-- **Agent Teams is experimental** &mdash; requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-- **GPT-5.3 model availability** &mdash; some model IDs may not be available under all subscription tiers; verify before hardcoding
-- **The pipeline is only as good as your verification gates** &mdash; invest in your test suite and linter config
-- **No context budget management yet** &mdash; long sessions may hit token limits (tracking this gap)
 
 ---
 
 ## Contributing
 
-deadfish-teams follows its own rules:
-
-1. **Small PRs** &mdash; one concern per change
-2. **Acceptance criteria upfront** &mdash; define "done" before writing code
-3. **Verification before merge** &mdash; `bash tests/smoke-run.sh && bash tests/test-installer.sh`
-4. **Sentinel protocol for structured output** &mdash; if it's a plan, spec, or verdict, use the fences
-
----
-
-## License
-
-TBD.
+If you want to contribute, follow the same rules the pipeline enforces on itself: small PRs, acceptance criteria upfront, verification before merge.
 
 ---
 
 <p align="center">
-  <sub>Built with <a href="https://claude.ai/claude-code">Claude Code</a> + <a href="https://openai.com/codex">Codex CLI</a> by <a href="mailto:fred@dimensionzero.net">Fred @ Dimension Zero</a></sub>
+  <sub>Built by <a href="mailto:fred@dimensionzero.net">Fred @ Dimension Zero</a> with <a href="https://claude.ai/claude-code">Claude Code</a> + <a href="https://github.com/openai/codex">Codex CLI</a></sub><br/>
+  <sub>Inspired by <a href="https://github.com/bmadcode/BMAD-METHOD">BMAD</a> &bull; <a href="https://github.com/nicekid1/Oh-my-OpenCode">Oh My OpenCode</a> &bull; <a href="https://github.com/google-gemini/gemini-cli">Google Conductor</a> &bull; <a href="https://github.com/cline/gsd-protocol">GSD Protocol</a></sub>
 </p>
