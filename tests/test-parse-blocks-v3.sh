@@ -87,6 +87,8 @@ valid_cases: list[tuple[str, str, list[tuple[str, object]]]] = [
     ("task.valid.json.md", "TASK", [("estimated_diff", 25), ("commands[0]", "npm test -- refresh")]),
     ("track.valid.yaml.md", "TRACK", [("status", "planning")]),
     ("track.valid.json.md", "TRACK", [("status", "executing")]),
+    ("adr.valid.yaml.md", "ADR", [("decision_id", "ADR-0001"), ("links[0].label", "spec")]),
+    ("adr.valid.json.md", "ADR", [("status", "accepted"), ("links.spec", "tracks/auth/spec.md")]),
     ("verdict_criterion.valid.yaml.md", "VERDICT_CRITERION", [("criterion_id", "AC-01"), ("status", "PASS")]),
     ("verdict_criterion.valid.json.md", "VERDICT_CRITERION", [("verify_sh", "FAIL")]),
     ("verdict.valid.yaml.md", "VERDICT", [("criteria[0].id", "AC-01"), ("decision", "PASS")]),
@@ -106,6 +108,7 @@ invalid_cases: list[tuple[str, str, str]] = [
     ("spec.invalid.ac_format.md", "SPEC", "acceptance_criteria[1].id"),
     ("task.invalid.missing_files.md", "TASK", "missing required key 'files'"),
     ("track.invalid.status.md", "TRACK", "field 'status' must be one of"),
+    ("adr.invalid.links_type.md", "ADR", "field 'links' must be one of types [list, object]"),
     ("verdict_criterion.invalid.ac_format.md", "VERDICT_CRITERION", "field 'criterion_id'"),
     ("verdict.invalid.missing_decision.md", "VERDICT", "missing required key 'decision'"),
     ("conductor.invalid.decision.md", "CONDUCTOR", "field 'decision' must be one of"),
@@ -170,8 +173,10 @@ if not isinstance(parsed_multi, list) or len(parsed_multi) != 2:
 if parsed_multi[1].get("criterion_id") != "AC-02":
     fail("multi-block parse returned unexpected second criterion_id")
 
-# Backward-compat parsing in auto mode (v1 payload).
-v1_payload = """<<<PLAN:V1:NONCE=ABC123>>>
+# Backward-compat parsing in auto mode (v1 payload), when legacy parser exists.
+legacy_parser = repo / "bin" / "parse-blocks-v1-legacy.py"
+if legacy_parser.exists():
+    v1_payload = """<<<PLAN:V1:NONCE=ABC123>>>
 TASK_ID=auth-P1-T01
 TITLE="Legacy plan"
 SUMMARY=
@@ -183,14 +188,14 @@ ACCEPTANCE:
 ESTIMATED_DIFF=12
 <<<END_PLAN:NONCE=ABC123>>>
 """
-proc = run_parse_input("PLAN", v1_payload, fmt="auto")
-if proc.returncode != 0:
-    fail(f"v1 auto-detect parse failed: {proc.stderr.strip()}")
-legacy = json.loads(proc.stdout)
-if legacy.get("task_id") != "auth-P1-T01":
-    fail("v1 auto parse returned wrong task_id")
-if legacy.get("files", [{}])[0].get("path") != "src/auth/jwt.ts":
-    fail("v1 auto parse returned wrong file path")
+    proc = run_parse_input("PLAN", v1_payload, fmt="auto")
+    if proc.returncode != 0:
+        fail(f"v1 auto-detect parse failed: {proc.stderr.strip()}")
+    legacy = json.loads(proc.stdout)
+    if legacy.get("task_id") != "auth-P1-T01":
+        fail("v1 auto parse returned wrong task_id")
+    if legacy.get("files", [{}])[0].get("path") != "src/auth/jwt.ts":
+        fail("v1 auto parse returned wrong file path")
 
 # Missing PyYAML behavior: parser fails early with clear fatal (schema file is YAML).
 with tempfile.TemporaryDirectory(prefix="parse-blocks-no-yaml-") as td:

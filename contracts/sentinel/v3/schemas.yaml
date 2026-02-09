@@ -90,6 +90,33 @@ TRACK:
   regex:
     nonce: '^[0-9A-F]{6}$'
 
+ADR:
+  required:
+    - decision_id: string
+    - status: string
+    - context: string
+    - options_considered: list
+    - decision: string
+    - consequences: list
+    - links: list|object
+  optional:
+    - date: string
+    - authors: list
+    - supersedes: list
+    - superseded_by: list
+    - nonce: string
+  regex:
+    decision_id: '^ADR-\d{4,}$'
+    date: '^\d{4}-\d{2}-\d{2}$'
+    nonce: '^[0-9A-F]{6}$'
+  enum:
+    status: [proposed, accepted, superseded]
+  lists:
+    links:
+      required:
+        - label: string
+        - url: string
+
 VERDICT_CRITERION:
   required:
     - task_id: string

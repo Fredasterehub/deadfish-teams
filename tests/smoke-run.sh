@@ -375,7 +375,7 @@ schema_path = Path(sys.argv[1])
 schemas = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
 if not isinstance(schemas, dict):
     raise SystemExit("schema file did not parse as mapping")
-for key in ("PLAN", "TASK", "VERDICT", "VERDICT_CRITERION"):
+for key in ("PLAN", "TASK", "ADR", "VERDICT", "VERDICT_CRITERION"):
     if key not in schemas:
         raise SystemExit(f"missing schema key: {key}")
 PY
