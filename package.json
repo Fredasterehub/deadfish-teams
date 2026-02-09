@@ -1,0 +1,25 @@
+{
+  "name": "deadfish-teams",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "deadfish-teams": "bin/install.js"
+  },
+  "files": [
+    "bin",
+    "agents",
+    "skills",
+    "templates",
+    "contracts",
+    "hooks",
+    "scripts",
+    "docs",
+    ".claude-plugin",
+    "README.md",
+    "CLAUDE.md",
+    "requirements.txt"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

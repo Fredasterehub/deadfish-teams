@@ -52,6 +52,33 @@ Most multi-agent workflows fail in predictable ways: context drift, inconsistent
 
 ---
 
+## Distribution / Install
+
+Install via `npx`:
+
+```bash
+npx deadfish-teams init
+npx deadfish-teams --global
+npx deadfish-teams --local
+npx deadfish-teams --uninstall
+npx deadfish-teams --local --uninstall
+```
+
+Install targets:
+- Global scope: `~/.claude/plugins/deadfish-teams`
+- Local scope: `./.claude/plugins/deadfish-teams`
+
+Settings/hook registration target:
+- Global install: `~/.claude/settings.json`
+- Local install: `./.claude/settings.json`
+
+Upgrade safety and patch persistence:
+- Reinstall preserves operator edits by backing up modified tracked files before overwrite.
+- Backups are written under: `.deadfish-install/backups/<timestamp>/...` inside the plugin root.
+- Example local backup path: `./.claude/plugins/deadfish-teams/.deadfish-install/backups/<timestamp>/README.md`
+
+---
+
 ## Quick start (5 minutes)
 
 ### Prerequisites
@@ -73,8 +100,12 @@ Most multi-agent workflows fail in predictable ways: context drift, inconsistent
 ### 2) Install the Claude Code plugin
 
 ```bash
-ln -s /tank/dump/DEV/deadfish-teams ~/.claude/plugins/deadfish-teams
+npx deadfish-teams init        # interactive
+# or: npx deadfish-teams --global   (non-interactive, defaults)
 ```
+
+> **Dev checkout?** If you're working from a local clone, you can symlink instead:
+> `ln -s /path/to/deadfish-teams ~/.claude/plugins/deadfish-teams`
 
 ### 3) Install Python dependencies
 
