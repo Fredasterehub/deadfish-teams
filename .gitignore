@@ -1,5 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+
+# Build artifacts (internal dev tooling)
+build/
+
+# Generated per-install (not source files)
+.mcp.json
+deadfish.config.yaml
+.deadfish-install/
+
+# Dev-only
+prompt/
 .signals/
 alignment_*.md
-prompt/
-__pycache__/
 *.bak.*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
