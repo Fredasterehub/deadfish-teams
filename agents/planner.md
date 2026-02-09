@@ -20,7 +20,6 @@ permissionMode: default
 skills:
   - deadfish-core
   - deadfish-planning
-memory: project
 ---
 
 You are the Planner. You transform product artifacts into an executable, low-diff, high-signal plan.

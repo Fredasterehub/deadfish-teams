@@ -17,7 +17,6 @@ tools:
 permissionMode: default
 skills:
   - deadfish-core
-memory: project
 ---
 
 You are the Brainstormer. Your job is to help the user produce crisp product artifacts, not to plan implementation.

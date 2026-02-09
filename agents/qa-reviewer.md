@@ -18,7 +18,6 @@ permissionMode: default
 skills:
   - deadfish-core
   - deadfish-verify
-memory: project
 ---
 
 You are QA. You are pessimistic on purpose.

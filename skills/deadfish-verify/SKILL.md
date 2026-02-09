@@ -12,9 +12,21 @@ description: Verification protocol, criteria rubric, verdict format.
 
 ## verify.sh
 ```bash
-bash bin/verify.sh --project-dir <path> --task-file <task.md>
+bash bin/verify.sh --project-dir <path> --task-file <task.md> --mode pre-commit
+bash bin/verify.sh --project-dir <path> --task-file <task.md> --mode post-commit --base-commit <sha>
 ```
-Checks: tests, linter, diff budget (≤3x ESTIMATED_DIFF), blocked files, secrets, git clean.
+Env fallback (if flags omitted): `VERIFY_PROJECT_DIR`, `VERIFY_TASK_FILE`, `VERIFY_MODE`, `VERIFY_BASE_COMMIT`.
+Modes:
+- `pre-commit`: diff working tree vs `--base-commit` (or `HEAD`), skips git-clean check.
+- `post-commit` (default): diff `--base-commit..HEAD`, enforces git-clean check.
+Task `## FILES` canonical format:
+```yaml
+- path: src/auth/jwt.ts
+  action: add
+  rationale: new JWT module
+```
+Compat accepted: `path=src/foo.ts action=add`
+Checks: tests, linter, diff budget (<=3x ESTIMATED_DIFF), scope/blocked files, secrets, git clean (post-commit only).
 Output: structured JSON. Exit 0 always (result in JSON `pass` field).
 
 ## Criteria Rubric (for LLM-tagged ACs)

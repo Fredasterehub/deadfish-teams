@@ -1,0 +1,191 @@
+PLAN:
+  required:
+    - track_id: string
+    - base_commit: string
+    - tasks: list
+  optional:
+    - nonce: string
+  regex:
+    base_commit: '^[0-9a-f]{7,40}$'
+    nonce: '^[0-9A-F]{6}$'
+  lists:
+    tasks:
+      required:
+        - id: string
+        - title: string
+        - depends_on: list
+        - packet_path: string
+
+SPEC:
+  required:
+    - track_id: string
+    - goal: string
+    - non_goals: list
+    - acceptance_criteria: list
+  optional:
+    - constraints: list
+    - edge_cases: list
+    - out_of_scope: list
+    - nonce: string
+  regex:
+    nonce: '^[0-9A-F]{6}$'
+  lists:
+    acceptance_criteria:
+      required:
+        - id: string
+        - type: string
+        - text: string
+      regex:
+        id: '^AC-\d{2,}$'
+      enum:
+        type: [DET, LLM]
+
+TASK:
+  required:
+    - task_id: string
+    - title: string
+    - goal: string
+    - acceptance_criteria: list
+    - files: list
+    - commands: list
+    - summary: string
+    - estimated_diff: int
+  optional:
+    - risks: list
+    - rollback: string
+    - nonce: string
+  regex:
+    task_id: '^[a-z]+-P\d+-T\d{2}$'
+    nonce: '^[0-9A-F]{6}$'
+  lists:
+    acceptance_criteria:
+      required:
+        - id: string
+        - type: string
+        - text: string
+      regex:
+        id: '^AC-\d{2,}$'
+      enum:
+        type: [DET, LLM]
+    files:
+      required:
+        - path: string
+        - action: string
+        - rationale: string
+      enum:
+        action: [add, modify, delete]
+
+TRACK:
+  required:
+    - track_id: string
+    - track_name: string
+    - status: string
+    - requirements: list
+  optional:
+    - spec_path: string
+    - plan_path: string
+    - nonce: string
+  enum:
+    status: [selected, planning, executing, complete, blocked]
+  regex:
+    nonce: '^[0-9A-F]{6}$'
+
+VERDICT_CRITERION:
+  required:
+    - task_id: string
+    - criterion_id: string
+    - verify_sh: string
+    - status: string
+    - evidence: string
+  optional:
+    - fix_forward: list
+    - nonce: string
+  regex:
+    task_id: '^[a-z]+-P\d+-T\d{2}$'
+    criterion_id: '^AC-\d{2,}$'
+    nonce: '^[0-9A-F]{6}$'
+  enum:
+    verify_sh: [PASS, FAIL]
+    status: [PASS, FAIL]
+
+VERDICT:
+  required:
+    - scope: string
+    - task_id: string
+    - verify_sh: string
+    - criteria: list
+    - decision: string
+  optional:
+    - nonce: string
+    - fix_forward: list
+  regex:
+    task_id: '^[a-z]+-P\d+-T\d{2}$'
+    nonce: '^[0-9A-F]{6}$'
+  enum:
+    scope: [TASK, TRACK]
+    verify_sh: [PASS, FAIL]
+    decision: [PASS, FAIL]
+  lists:
+    criteria:
+      required:
+        - id: string
+        - status: string
+        - evidence: string
+      regex:
+        id: '^AC-\d{2,}$'
+      enum:
+        status: [PASS, FAIL]
+
+CONDUCTOR:
+  required:
+    - decision: string
+    - because: list
+  optional:
+    - recommended_changes: list
+    - risks_if_ignored: list
+    - nonce: string
+  enum:
+    decision: [CONTINUE, ADAPT, REPLAN, ESCALATE]
+  regex:
+    nonce: '^[0-9A-F]{6}$'
+
+DOCSYNC:
+  required:
+    - action: string
+  optional:
+    - touched_docs: list
+    - summary: string
+    - nonce: string
+  enum:
+    action: [NOP, BUFFER, UPDATE, FLUSH]
+  regex:
+    nonce: '^[0-9A-F]{6}$'
+
+IMPLEMENT:
+  required:
+    - task_id: string
+    - changed_files: list
+    - summary: string
+    - verify: object
+  optional:
+    - notes: string
+    - nonce: string
+  regex:
+    task_id: '^[a-z]+-P\d+-T\d{2}$'
+    nonce: '^[0-9A-F]{6}$'
+  lists:
+    changed_files:
+      required:
+        - path: string
+
+INTEGRATE:
+  required:
+    - why_called: string
+    - changes: list
+    - verify_sh: string
+  optional:
+    - nonce: string
+  enum:
+    verify_sh: [PASS, FAIL]
+  regex:
+    nonce: '^[0-9A-F]{6}$'

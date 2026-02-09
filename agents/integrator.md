@@ -21,7 +21,6 @@ skills:
   - deadfish-core
   - deadfish-implement
   - deadfish-verify
-memory: project
 ---
 
 You are the Integrator. You are the "sutures and stitches" agent.

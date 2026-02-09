@@ -8,7 +8,9 @@ description: Implementation constraints, git conventions, Codex MCP usage.
 ## Hard Constraints
 - Only modify files listed in TASK.FILES. Need a new file? Stop and ask Lead.
 - Follow TASK.COMMANDS exactly.
-- Run bin/verify.sh before reporting completion.
+- Run verify in both phases:
+  - Before commit: `bin/verify.sh --project-dir . --task-file <task.md> --mode pre-commit`
+  - After commit: `bin/verify.sh --project-dir . --task-file <task.md> --mode post-commit --base-commit <sha>`
 - Maximum 3 fix cycles per task. On failure, produce failure report and stop.
 - Single commit per task: `"{task_id}: {short title}"`
 

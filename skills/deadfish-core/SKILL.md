@@ -9,7 +9,7 @@ description: Core deadfish invariants and protocols. Referenced by all teammates
 If it's real work, it exists as a Task. If it's not a Task, it's chatter.
 
 ## Invariants (NEVER VIOLATE)
-1. **Only Coder touches src/**. All other roles are read-only on source code.
+1. **Only implementers (Coder + Integrator) touch src/**. All other roles are read-only on source code. Doc-keeper writes only to docs/living/.
 2. **verify.sh is truth**. Deterministic facts trump LLM judgment. Always.
 3. **Acceptance criteria are immutable**. On retry/drift, append context — never weaken.
 4. **Self-backpressure**. Coder runs verify.sh before every commit.
@@ -29,9 +29,9 @@ Types: `SPEC`, `PLAN`, `TASK`, `VERDICT`, `CONDUCTOR`, `DOCSYNC`, `IMPLEMENT`, `
 
 ## Task Naming
 ```
-{track_id}-P{phase}-T{NN}-{action}
+{track}-P{N}-T{NN}
 ```
-Examples: `auth-P1-T01-setup`, `auth-P1-T02-jwt`, `auth-P1-BOUNDARY`
+Examples: `auth-P1-T01`, `auth-P1-T02`, `billing-P3-T07`
 
 ## Escalation Ladder
 1. Coder retry (automatic, max 2)

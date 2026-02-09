@@ -76,7 +76,16 @@ Most multi-agent workflows fail in predictable ways: context drift, inconsistent
 ln -s /tank/dump/DEV/deadfish-teams ~/.claude/plugins/deadfish-teams
 ```
 
-### 3) Start a new project session
+### 3) Install Python dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+- `bin/parse-blocks.py` prefers PyYAML parsing.
+- Stdlib fallback: if a `deadfish:TYPE` fence payload is valid JSON, parser paths can decode it via `json.loads()` without YAML-specific syntax.
+
+### 4) Start a new project session
 
 Open Claude Code inside your target repo, then paste the **Lead kickoff** prompt from [`CLAUDE.md`](./CLAUDE.md).
 

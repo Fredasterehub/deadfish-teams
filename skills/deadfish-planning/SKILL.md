@@ -38,6 +38,7 @@ Write to `tracks/{track_id}/SPEC.md`:
 
 ## Task Packet Format
 Write each to `tracks/{track_id}/TASKS/{task_id}.md`:
+Use canonical YAML list entries in `## FILES`; do not use pipe-delimited `path: x | action: y` lines.
 
 ```markdown
 # {TASK_ID}: {TITLE}
@@ -50,8 +51,12 @@ Write each to `tracks/{track_id}/TASKS/{task_id}.md`:
 - AC-03 (LLM): {criterion from SPEC}
 
 ## FILES
-- path: src/auth/jwt.ts | action: add | rationale: new JWT module
-- path: tests/auth/jwt.test.ts | action: add | rationale: test coverage
+- path: src/auth/jwt.ts
+  action: add
+  rationale: new JWT module
+- path: tests/auth/jwt.test.ts
+  action: add
+  rationale: test coverage
 
 ## COMMANDS
 - npm test

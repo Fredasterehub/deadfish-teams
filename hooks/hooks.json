@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/task-completed"
+            "command": "bash \"${DEADFISH_PLUGIN_ROOT}/hooks/scripts/on-task-completed.sh\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/teammate-idle"
+            "command": "bash \"${DEADFISH_PLUGIN_ROOT}/hooks/scripts/on-teammate-idle.sh\""
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "touch /tank/dump/DEV/deadfish-teams/.signals/subagent-stop"
+            "command": "bash \"${DEADFISH_PLUGIN_ROOT}/hooks/scripts/on-subagent-stop.sh\""
           }
         ]
       }

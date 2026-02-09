@@ -1,1 +1,5 @@
 .signals/
+alignment_*.md
+prompt/
+__pycache__/
+*.bak.*

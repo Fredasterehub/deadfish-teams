@@ -19,12 +19,97 @@
 
 set -uo pipefail
 
+# ── CLI / Configuration ────────────────────────────────────────────────────
+usage() {
+  cat <<'EOF'
+Usage: verify.sh [--project-dir <dir>] [--task-file <path>] [--base-commit <sha>] [--mode <pre-commit|post-commit>]
+
+Flags take precedence over env vars:
+  --project-dir  > VERIFY_PROJECT_DIR
+  --task-file    > VERIFY_TASK_FILE
+  --base-commit  > VERIFY_BASE_COMMIT
+  --mode         > VERIFY_MODE (default: post-commit)
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir)
+        [[ $# -ge 2 ]] || { echo "ERROR: --project-dir requires a value" >&2; exit 1; }
+        CLI_PROJECT_DIR="$2"
+        shift 2
+        ;;
+      --project-dir=*)
+        CLI_PROJECT_DIR="${1#*=}"
+        shift
+        ;;
+      --task-file)
+        [[ $# -ge 2 ]] || { echo "ERROR: --task-file requires a value" >&2; exit 1; }
+        CLI_TASK_FILE="$2"
+        shift 2
+        ;;
+      --task-file=*)
+        CLI_TASK_FILE="${1#*=}"
+        shift
+        ;;
+      --base-commit)
+        [[ $# -ge 2 ]] || { echo "ERROR: --base-commit requires a value" >&2; exit 1; }
+        CLI_BASE_COMMIT="$2"
+        shift 2
+        ;;
+      --base-commit=*)
+        CLI_BASE_COMMIT="${1#*=}"
+        shift
+        ;;
+      --mode)
+        [[ $# -ge 2 ]] || { echo "ERROR: --mode requires a value" >&2; exit 1; }
+        CLI_MODE="$2"
+        shift 2
+        ;;
+      --mode=*)
+        CLI_MODE="${1#*=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "ERROR: unknown argument: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+CLI_PROJECT_DIR=""
+CLI_TASK_FILE=""
+CLI_BASE_COMMIT=""
+CLI_MODE=""
+parse_args "$@"
+
+PROJECT_DIR="${CLI_PROJECT_DIR:-${VERIFY_PROJECT_DIR:-.}}"
+TASK_FILE_OVERRIDE="${CLI_TASK_FILE:-${VERIFY_TASK_FILE:-}}"
+BASE_COMMIT="${CLI_BASE_COMMIT:-${VERIFY_BASE_COMMIT:-}}"
+MODE="${CLI_MODE:-${VERIFY_MODE:-post-commit}}"
+CHECK_TIMEOUT="${VERIFY_CHECK_TIMEOUT:-120}"
+
+case "$MODE" in
+  pre-commit|post-commit) ;;
+  *)
+    echo "ERROR: --mode must be pre-commit or post-commit (got '$MODE')" >&2
+    exit 1
+    ;;
+esac
+
 # ── Task Discovery ─────────────────────────────────────────────────────────
-DEADF_ROOT="${VERIFY_DEADF_ROOT:-${VERIFY_PROJECT_DIR:-$(pwd)}}"
+DEADF_ROOT="${VERIFY_DEADF_ROOT:-${PROJECT_DIR:-$(pwd)}}"
 STATE_FILE="${DEADF_ROOT}/STATE.yaml"
 
-if [[ -n "${VERIFY_TASK_FILE:-}" ]]; then
-  TASK_FILE="${VERIFY_TASK_FILE}"
+if [[ -n "$TASK_FILE_OVERRIDE" ]]; then
+  TASK_FILE="$TASK_FILE_OVERRIDE"
 else
   TASK_FILE=""
   if command -v yq &>/dev/null && [[ -f "$STATE_FILE" ]]; then
@@ -41,13 +126,10 @@ else
   fi
 fi
 
-# ── Configuration ──────────────────────────────────────────────────────────
-PROJECT_DIR="${VERIFY_PROJECT_DIR:-.}"
-CHECK_TIMEOUT="${VERIFY_CHECK_TIMEOUT:-120}"
-
 # ── Globals ────────────────────────────────────────────────────────────────
 FAILURES=()
 PASS=true
+DIFF_BASE_REF=""
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -92,7 +174,109 @@ add_failure() {
   PASS=false
 }
 
-# Parse TASK file for estimated_diff and allowed paths, supporting YAML frontmatter.
+# Extract the first integer found in a string.
+extract_first_int() {
+  local s="$1"
+  if [[ "$s" =~ ([0-9]+) ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Extract content under a markdown "## SECTION" heading until the next "## ...".
+extract_markdown_section() {
+  local task_file="$1"
+  local section="$2"
+  awk -v want="$(printf '%s' "$section" | tr '[:upper:]' '[:lower:]')" '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    {
+      if ($0 ~ /^[[:space:]]*##[[:space:]]+/) {
+        heading=$0
+        sub(/^[[:space:]]*##[[:space:]]+/, "", heading)
+        heading=tolower(trim(heading))
+        if (in_section == 1) exit
+        if (heading == want) {
+          in_section=1
+          next
+        }
+      }
+      if (in_section == 1) print
+    }
+  ' "$task_file" 2>/dev/null || true
+}
+
+# Determine which git base ref should be used by checks.
+resolve_diff_base() {
+  DIFF_BASE_REF=""
+
+  if ! command -v git &>/dev/null; then
+    return
+  fi
+
+  cd "$PROJECT_DIR" || return
+
+  if [[ -n "$BASE_COMMIT" ]]; then
+    if git rev-parse --verify "${BASE_COMMIT}^{commit}" &>/dev/null; then
+      DIFF_BASE_REF="$BASE_COMMIT"
+    else
+      add_failure "base_commit invalid or not found: $BASE_COMMIT"
+      if git rev-parse --verify HEAD^{commit} &>/dev/null; then
+        DIFF_BASE_REF="HEAD"
+      fi
+    fi
+  elif git rev-parse --verify HEAD^{commit} &>/dev/null; then
+    DIFF_BASE_REF="HEAD"
+    if [[ "$MODE" == "post-commit" ]]; then
+      log "WARN: --base-commit not set in post-commit mode; using HEAD"
+    fi
+  fi
+}
+
+# Return numstat output for the configured mode.
+git_collect_numstat() {
+  if [[ "$MODE" == "pre-commit" ]]; then
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff --numstat "$DIFF_BASE_REF" 2>/dev/null || true
+    else
+      { git diff --numstat 2>/dev/null || true; git diff --cached --numstat 2>/dev/null || true; } | awk 'NF'
+    fi
+  else
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff --numstat "${DIFF_BASE_REF}..HEAD" 2>/dev/null || true
+    fi
+  fi
+}
+
+# Return changed file list for the configured mode.
+git_collect_changed_files() {
+  if [[ "$MODE" == "pre-commit" ]]; then
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff --name-only "$DIFF_BASE_REF" 2>/dev/null || true
+    else
+      { git diff --name-only 2>/dev/null || true; git diff --cached --name-only 2>/dev/null || true; } | awk 'NF' | sort -u
+    fi
+  else
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff --name-only "${DIFF_BASE_REF}..HEAD" 2>/dev/null || true
+    fi
+  fi
+}
+
+# Return raw diff content for the configured mode.
+git_collect_diff_content() {
+  if [[ "$MODE" == "pre-commit" ]]; then
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff "$DIFF_BASE_REF" 2>/dev/null || true
+    else
+      { git diff 2>/dev/null || true; git diff --cached 2>/dev/null || true; }
+    fi
+  else
+    if [[ -n "$DIFF_BASE_REF" ]]; then
+      git diff "${DIFF_BASE_REF}..HEAD" 2>/dev/null || true
+    fi
+  fi
+}
+
+# Parse TASK file for estimated_diff and allowed paths.
 parse_task_file() {
   local task_file="$1"
   TASK_ESTIMATED_DIFF=""
@@ -103,6 +287,7 @@ parse_task_file() {
   local first_line
   first_line=$(head -n 1 "$task_file" 2>/dev/null || true)
 
+  # Optional YAML frontmatter support (legacy).
   if [[ "$first_line" == "---" ]]; then
     local frontmatter
     frontmatter=$(sed -n '2,/^---$/{ /^---$/d; p }' "$task_file" 2>/dev/null || true)
@@ -112,12 +297,50 @@ parse_task_file() {
     fi
   fi
 
-  if [[ -z "$TASK_ESTIMATED_DIFF" ]]; then
-    TASK_ESTIMATED_DIFF=$(grep -oP 'ESTIMATED_DIFF[=:]\s*\K\d+' "$task_file" 2>/dev/null || true)
+  # Canonical v3 markdown section:
+  # ## FILES
+  # - path: src/file.ts
+  #   action: add
+  if [[ ${#TASK_ALLOWED_PATHS[@]} -eq 0 ]]; then
+    local files_section
+    files_section=$(extract_markdown_section "$task_file" "FILES")
+    if [[ -n "$files_section" ]]; then
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*path:[[:space:]]*(.+)$ ]]; then
+          local raw_path="${BASH_REMATCH[1]}"
+          raw_path="${raw_path%%#*}"
+          raw_path=$(echo "$raw_path" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+          # Drop draft pipe-delimited format: "path: x | action: y"
+          if [[ -z "$raw_path" || "$raw_path" == *"|"* ]]; then
+            continue
+          fi
+          if [[ "$raw_path" =~ ^\"(.*)\"$ ]]; then
+            raw_path="${BASH_REMATCH[1]}"
+          elif [[ "$raw_path" =~ ^\'(.*)\'$ ]]; then
+            raw_path="${BASH_REMATCH[1]}"
+          fi
+          TASK_ALLOWED_PATHS+=("$raw_path")
+        fi
+      done <<< "$files_section"
+    fi
   fi
 
+  # v1 compat (accepted): path=src/foo.ts action=add
   if [[ ${#TASK_ALLOWED_PATHS[@]} -eq 0 ]]; then
     mapfile -t TASK_ALLOWED_PATHS < <(grep -oP 'path=\K[^\s]+' "$task_file" 2>/dev/null || true)
+  fi
+
+  # ESTIMATED_DIFF from frontmatter, section, or inline yaml-like key.
+  TASK_ESTIMATED_DIFF=$(extract_first_int "${TASK_ESTIMATED_DIFF:-}")
+  if [[ -z "$TASK_ESTIMATED_DIFF" ]]; then
+    local estimated_section
+    estimated_section=$(extract_markdown_section "$task_file" "ESTIMATED_DIFF")
+    TASK_ESTIMATED_DIFF=$(extract_first_int "$estimated_section")
+  fi
+  if [[ -z "$TASK_ESTIMATED_DIFF" ]]; then
+    local estimate_line
+    estimate_line=$(grep -im1 -E 'estimated_diff[[:space:]]*:' "$task_file" 2>/dev/null || true)
+    TASK_ESTIMATED_DIFF=$(extract_first_int "$estimate_line")
   fi
 }
 
@@ -248,13 +471,8 @@ check_diff() {
 
   cd "$PROJECT_DIR" || return
 
-  # Count diff lines vs parent commit
-  if git rev-parse HEAD~1 &>/dev/null; then
-    numstat_output=$(git diff --numstat HEAD~1 2>/dev/null || true)
-  elif git rev-parse HEAD &>/dev/null; then
-    # First commit — count all lines
-    numstat_output=$(git show --numstat --format="" HEAD 2>/dev/null || true)
-  fi
+  # Count diff lines with mode-aware base selection.
+  numstat_output=$(git_collect_numstat)
 
   if [[ -n "$numstat_output" ]]; then
     local total=0
@@ -268,9 +486,6 @@ check_diff() {
     done <<< "$numstat_output"
     diff_lines="$total"
   fi
-
-  # Compare against ESTIMATED_DIFF from TASK file if available
-  parse_task_file "$TASK_FILE"
 
   local estimated_diff="${TASK_ESTIMATED_DIFF}"
   if [[ -n "$estimated_diff" && "$estimated_diff" =~ ^[0-9]+$ && "$estimated_diff" -gt 0 ]]; then
@@ -291,6 +506,8 @@ check_diff() {
 check_paths() {
   local paths_ok=true
   local -a blocked_files=()
+  local -a hard_blocked_files=()
+  local -a scope_violations=()
 
   if ! command -v git &>/dev/null; then
     log "WARN: git not available, skipping path check"
@@ -303,15 +520,10 @@ check_paths() {
 
   # Get list of changed files
   local -a changed_files=()
-  if git rev-parse HEAD~1 &>/dev/null; then
-    mapfile -t changed_files < <(git diff HEAD~1 --name-only 2>/dev/null)
-  elif git rev-parse HEAD &>/dev/null; then
-    mapfile -t changed_files < <(git show --name-only --format="" HEAD 2>/dev/null)
-  fi
+  mapfile -t changed_files < <(git_collect_changed_files)
 
-  # Get allowed paths from TASK file (frontmatter or legacy)
+  # Get allowed paths from TASK file (canonical v3 or compat v1)
   local -a allowed_paths=()
-  parse_task_file "$TASK_FILE"
   if [[ ${#TASK_ALLOWED_PATHS[@]} -gt 0 ]]; then
     allowed_paths=("${TASK_ALLOWED_PATHS[@]}")
   fi
@@ -333,6 +545,7 @@ check_paths() {
     for pattern in "${blocked_patterns[@]}"; do
       if echo "$f" | grep -qP "$pattern"; then
         blocked_files+=("$f")
+        hard_blocked_files+=("$f")
         paths_ok=false
       fi
     done
@@ -347,15 +560,18 @@ check_paths() {
         fi
       done
       if [[ "$found" == "false" ]]; then
-        # File not in allowed list — flag it but don't hard-fail
-        # (implementer may create helper files not in the plan)
-        log "WARN: File '$f' not in plan's allowed paths"
+        scope_violations+=("$f")
+        blocked_files+=("$f")
+        paths_ok=false
       fi
     fi
   done
 
-  if [[ ${#blocked_files[@]} -gt 0 ]]; then
-    add_failure "paths_ok: blocked files modified: ${blocked_files[*]}"
+  if [[ ${#scope_violations[@]} -gt 0 ]]; then
+    add_failure "paths_ok: scope violations (not in TASK FILES): ${scope_violations[*]}"
+  fi
+  if [[ ${#hard_blocked_files[@]} -gt 0 ]]; then
+    add_failure "paths_ok: blocked files modified: ${hard_blocked_files[*]}"
   fi
 
   CHECK_PATHS_OK="$paths_ok"
@@ -379,11 +595,7 @@ check_secrets() {
 
   # Get diff content to scan
   local diff_content=""
-  if git rev-parse HEAD~1 &>/dev/null; then
-    diff_content=$(git diff HEAD~1 2>/dev/null || true)
-  elif git rev-parse HEAD &>/dev/null; then
-    diff_content=$(git show HEAD 2>/dev/null || true)
-  fi
+  diff_content=$(git_collect_diff_content)
 
   # Secret patterns (added lines only — lines starting with +)
   local -a patterns=(
@@ -433,6 +645,13 @@ check_secrets() {
 check_git_clean() {
   local git_clean=true
   local -a uncommitted_files=()
+
+  if [[ "$MODE" == "pre-commit" ]]; then
+    log "Skipping git clean check in pre-commit mode"
+    CHECK_GIT_CLEAN=true
+    CHECK_UNCOMMITTED_FILES=()
+    return
+  fi
 
   if ! command -v git &>/dev/null; then
     log "WARN: git not available, skipping git clean check"
@@ -535,7 +754,7 @@ EOF
 # ── Main ──────────────────────────────────────────────────────────────────
 
 main() {
-  log "Starting deterministic verification (timeout=${CHECK_TIMEOUT}s per check)"
+  log "Starting deterministic verification (mode=${MODE}, timeout=${CHECK_TIMEOUT}s per check)"
 
   # Initialize all check variables to safe defaults
   CHECK_TEST_EXIT=0
@@ -550,6 +769,10 @@ main() {
   CHECK_SECRET_MATCHES=()
   CHECK_GIT_CLEAN=true
   CHECK_UNCOMMITTED_FILES=()
+
+  # Resolve task metadata and mode-aware git base once for all checks.
+  parse_task_file "$TASK_FILE"
+  resolve_diff_base
 
   # Run all checks (order matters: fast/simple first)
   check_git_clean
@@ -566,4 +789,4 @@ main() {
   exit 0
 }
 
-main "$@"
+main
