@@ -381,6 +381,10 @@ for key in ("PLAN", "TASK", "ADR", "VERDICT", "VERDICT_CRITERION"):
 PY
 }
 
+run_hook_tests() {
+  bash "${REPO_ROOT}/tests/test-hooks.sh"
+}
+
 main() {
   require_cmd bash
   require_cmd git
@@ -400,6 +404,7 @@ main() {
   run_phase "generate task description from packet" "packet_to_task" generate_task_description
   run_phase "run verify.sh pre-commit" "verify_pre" run_verify_pre_commit
   run_phase "run verify.sh post-commit" "verify_post" run_verify_post_commit
+  run_phase "run hook scripts" "hooks" run_hook_tests
   run_phase "parse+build verdict (v3)" "verdict" parse_and_build_verdict
   run_phase "docs/living exists and writable" "docs_living" check_docs_living_writable
   run_phase "v3 schemas load" "schemas" check_schemas_load

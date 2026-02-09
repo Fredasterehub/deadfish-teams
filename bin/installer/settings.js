@@ -8,6 +8,7 @@ const MANAGED_SOURCE = 'deadfish-teams';
 const MANAGED_FLAG = 'deadfish_teams';
 
 const HOOK_SPECS = [
+  { event: 'PreToolUse', script: 'on-protected-write.sh', matcher: 'Edit|Write|MultiEdit' },
   { event: 'TaskCompleted', script: 'on-task-completed.sh' },
   { event: 'TeammateIdle', script: 'on-teammate-idle.sh' },
   { event: 'SubagentStop', script: 'on-subagent-stop.sh' },
@@ -118,12 +119,12 @@ function isManagedHookEntry(entry, expectedCommands) {
   });
 }
 
-function buildManagedEntry(pluginRoot, eventName, command) {
-  return {
+function buildManagedEntry(pluginRoot, spec, command) {
+  const entry = {
     source: MANAGED_SOURCE,
     [MANAGED_FLAG]: true,
     plugin_root: pluginRoot,
-    event: eventName,
+    event: spec.event,
     hooks: [
       {
         type: 'command',
@@ -131,6 +132,10 @@ function buildManagedEntry(pluginRoot, eventName, command) {
       },
     ],
   };
+  if (typeof spec.matcher === 'string' && spec.matcher.trim() !== '') {
+    entry.matcher = spec.matcher;
+  }
+  return entry;
 }
 
 function buildNamespaceBlob(pluginRoot, commandsByEvent) {
@@ -182,7 +187,7 @@ function normalizeSettingsForRegister(settings, pluginRoot) {
     }
 
     const retained = next.hooks[eventName].filter((entry) => !isManagedHookEntry(entry, expectedCommands));
-    retained.push(buildManagedEntry(pluginRoot, eventName, command));
+    retained.push(buildManagedEntry(pluginRoot, spec, command));
     next.hooks[eventName] = retained;
   }
 

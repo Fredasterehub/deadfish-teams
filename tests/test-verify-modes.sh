@@ -78,7 +78,7 @@ estimated_diff: 100
     run(["git", "commit", "-qm", "base"], cwd=path)
 
 
-def run_verify(project: Path, task_file: str, mode: str) -> dict:
+def run_verify(project: Path, task_file: str, mode: str) -> tuple[dict, int]:
     proc = run(
         [
             "bash",
@@ -95,12 +95,17 @@ def run_verify(project: Path, task_file: str, mode: str) -> dict:
         cwd=project,
         check=False,
     )
-    if proc.returncode != 0:
-        fail(f"verify.sh exited {proc.returncode}: stderr={proc.stderr}\nstdout={proc.stdout}")
     try:
-        return json.loads(proc.stdout)
+        payload = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         fail(f"verify.sh output was not valid JSON: {exc}\nstdout={proc.stdout}\nstderr={proc.stderr}")
+
+    expected_exit = 0 if payload.get("pass") is True else 1
+    if expected_exit == 0 and proc.returncode != 0:
+        fail(f"verify.sh expected exit 0 for pass=true, got {proc.returncode}: stderr={proc.stderr}\nstdout={proc.stdout}")
+    if expected_exit != 0 and proc.returncode == 0:
+        fail(f"verify.sh expected non-zero exit for pass=false, got 0: stderr={proc.stderr}\nstdout={proc.stdout}")
+    return payload, proc.returncode
 
 
 with tempfile.TemporaryDirectory(prefix="verify-modes-") as td:
@@ -111,13 +116,17 @@ with tempfile.TemporaryDirectory(prefix="verify-modes-") as td:
     init_repo(repo1)
     write(repo1 / "src" / "allowed.txt", "base\nmodified\n")
 
-    pre = run_verify(repo1, "task-canonical.md", "pre-commit")
+    pre, pre_code = run_verify(repo1, "task-canonical.md", "pre-commit")
+    if pre_code != 0:
+        fail(f"pre-commit pass path should exit 0, got {pre_code}")
     if pre["checks"]["git_clean"] is not True:
         fail(f"pre-commit should skip git_clean and report true, got: {pre}")
     if pre["checks"]["paths_ok"] is not True:
         fail(f"pre-commit with allowed file should pass paths_ok, got: {pre}")
 
-    post = run_verify(repo1, "task-canonical.md", "post-commit")
+    post, post_code = run_verify(repo1, "task-canonical.md", "post-commit")
+    if post_code == 0:
+        fail(f"post-commit fail path should exit non-zero, got {post_code}")
     if post["checks"]["git_clean"] is not False:
         fail(f"post-commit should enforce git_clean with dirty tree, got: {post}")
     if not any("git_clean:" in item for item in post.get("failures", [])):
@@ -128,14 +137,18 @@ with tempfile.TemporaryDirectory(prefix="verify-modes-") as td:
     init_repo(repo2)
     write(repo2 / "src" / "disallowed.txt", "base\nchanged\n")
 
-    canonical = run_verify(repo2, "task-canonical.md", "pre-commit")
+    canonical, canonical_code = run_verify(repo2, "task-canonical.md", "pre-commit")
+    if canonical_code == 0:
+        fail("canonical scope violation should return non-zero exit")
     if canonical["checks"]["paths_ok"] is not False:
         fail(f"canonical FILES should enforce scope, got: {canonical}")
     if "src/disallowed.txt" not in canonical["checks"]["blocked_files"]:
         fail(f"blocked_files should include src/disallowed.txt, got: {canonical['checks']['blocked_files']}")
 
     # Case 3: draft pipe-delimited FILES line is ignored (no allow-list enforcement).
-    pipe = run_verify(repo2, "task-pipe.md", "pre-commit")
+    pipe, pipe_code = run_verify(repo2, "task-pipe.md", "pre-commit")
+    if pipe_code != 0:
+        fail(f"pipe-delimited pass path should exit 0, got: {pipe_code}")
     if pipe["checks"]["paths_ok"] is not True:
         fail(f"pipe-delimited FILES should be ignored in v3 parser, got: {pipe}")
     if pipe["checks"]["blocked_files"]:
@@ -146,7 +159,9 @@ with tempfile.TemporaryDirectory(prefix="verify-modes-") as td:
     init_repo(repo3)
     write(repo3 / "src" / "disallowed.txt", "base\nchanged\n")
 
-    legacy = run_verify(repo3, "task-legacy.md", "pre-commit")
+    legacy, legacy_code = run_verify(repo3, "task-legacy.md", "pre-commit")
+    if legacy_code == 0:
+        fail("legacy scope violation should return non-zero exit")
     if legacy["checks"]["paths_ok"] is not False:
         fail(f"legacy path= format should still enforce scope, got: {legacy}")
     if "src/disallowed.txt" not in legacy["checks"]["blocked_files"]:
