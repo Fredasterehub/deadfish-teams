@@ -26,28 +26,31 @@
 
 This is my attempt at creating what I would consider an efficient and optimized workflow to help you develop any &mdash; or at least most &mdash; ideas you might have.
 
-Over the last couple of months I've had the chance to play around and get great results from some amazing open-source projects:
-
-| Project | What caught my attention |
-|---------|------------------------|
-| [**BMAD Method**](https://github.com/bmadcode/BMAD-METHOD) | Structured brainstorming that actually converges. Not "generate 10 ideas" &mdash; a real ideation-to-requirements pipeline with roles. |
-| [**Oh My OpenCode**](https://github.com/nicekid1/Oh-my-OpenCode) | Showed me how far you can push a CLI dev tool with extensions and hooks. The composability was eye-opening. |
-| [**Google Conductor**](https://github.com/google-gemini/gemini-cli) | Gemini CLI's orchestration layer. Proved multi-agent coordination is real &mdash; but also exposed the gap: zero context management. |
-| [**GSD &mdash; Get Shit Done**](https://github.com/cline/gsd-protocol) | The one that's almost king. Plans-as-prompts, task packets, verification gates. The closest thing to "engineering discipline for AI coding." |
-
-I tried to combine the different strengths of each and improve from the combination of all the concepts together. The result is deadfish-teams.
+Over the last couple of months I've had the chance to play around and get great results from some amazing open-source projects. Each one taught me something different, and each one left me wanting *just a little more*. So I tried to combine the different strengths of each and improve from the combination of all the concepts together. The result is deadfish-teams.
 
 ---
 
-## What I took from each
+## Standing on the shoulders of giants
 
-**From BMAD:** the brainstorming pipeline. Deadfish doesn't just ask "what should we build?" &mdash; it runs a structured ideation process (7 brainstorm templates) that produces a real spec with acceptance criteria. Not vibes. Requirements.
+### [BMAD Method](https://github.com/bmadcode/BMAD-METHOD) &mdash; *the brainstorming engine*
 
-**From OpenCode:** the plugin architecture. Deadfish installs as a Claude Code plugin with hooks, skills, and agent definitions. Composable, swappable, upgradeable without losing your customizations.
+I fell in love with BMAD's brainstorming capabilities. Not the "give me 10 ideas" kind &mdash; this is world-class, structured ideation that actually converges into real requirements. Version 6 is just *crazy* good. Deadfish borrows BMAD's multi-template brainstorming pipeline (7 templates that guide you from wild ideas to a concrete spec with acceptance criteria).
 
-**From Conductor:** multi-agent coordination. But where Conductor stops at orchestration, deadfish adds **drift detection** (a dedicated Conductor agent that watches for scope creep) and **crash recovery** (tasks persist across sessions).
+**But here's the thing.** BMAD plans *everything* upfront. All phases, all tasks, all at once. And 82 tasks later, you're still following the same rigid structure &mdash; even though at task 32 you realized a better design was possible. But it was already planned, so... you keep going. Deadfish keeps BMAD's brainstorming brilliance but replaces the rigid execution with something more adaptive.
 
-**From GSD:** almost everything structural. Plans-as-prompts, task packets, deterministic verification, scope limits. GSD is the backbone. What deadfish adds on top: **multi-model routing** (5 different models matched to roles), **living documentation** (7 budget-capped docs maintained automatically), and a **structured protocol** (11 sentinel types with schemas, not free-form text).
+### [Oh My OpenCode](https://github.com/nicekid1/Oh-my-OpenCode) &mdash; *the relentless loop*
+
+This one is the looping method *on steroids*. It auto-answers prompts to keep things moving, and the results were genuinely impressive &mdash; I had a lot of success with it. What it showed me was how far you can push a CLI tool with extensions, hooks, and a composable plugin architecture. Deadfish takes that plugin DNA: it installs as a Claude Code plugin with hooks, skills, and agent definitions that you can swap, extend, and upgrade without losing your customizations.
+
+### [Google Conductor](https://github.com/google-gemini/gemini-cli) &mdash; *the adaptive navigator*
+
+What really stood out with Conductor was the constant reevaluation. Where other systems define the entire roadmap on day one and never look back (cough cough, BMAD), Conductor takes a more dynamic, more agile approach to development. It keeps asking: *is this still the right direction?* Deadfish embeds that philosophy in a dedicated **Conductor agent** whose entire job is drift detection and boundary evaluation &mdash; watching for scope creep, questioning assumptions, deciding if it's time to replan rather than push through a plan that's no longer optimal.
+
+### [GSD &mdash; Get Shit Done](https://github.com/cline/gsd-protocol) &mdash; *almost perfection*
+
+GSD is the backbone. Plans-as-prompts, task packets, deterministic verification, scope limits &mdash; the closest thing to real engineering discipline for AI coding. The first versions were *incredible*: high quality, high speed, just raw execution. Then it slowly got more complex &mdash; better quality in some ways, but a different vibe than the initial lightning-fast runs. Still super good. Just... different.
+
+Deadfish takes GSD's structural DNA and adds what I felt was missing: **multi-model routing** (5 different models matched to the right role), **living documentation** (7 budget-capped docs maintained automatically so you never lose institutional knowledge), and a **structured protocol** (11 sentinel types with schemas &mdash; not free-form text that LLMs can hallucinate past).
 
 ---
 
