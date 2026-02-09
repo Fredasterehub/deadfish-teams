@@ -294,18 +294,38 @@ def _extract_list_schemas(type_schema: dict[str, Any]) -> dict[str, dict[str, An
 
 
 def _validate_type(field: str, expected: str, value: Any) -> None:
-    if expected == "string" and not isinstance(value, str):
-        raise ParseError(f"field '{field}' must be string")
-    if expected == "int" and not isinstance(value, int):
-        raise ParseError(f"field '{field}' must be int")
-    if expected == "number" and not isinstance(value, (int, float)):
-        raise ParseError(f"field '{field}' must be number")
-    if expected == "bool" and not isinstance(value, bool):
-        raise ParseError(f"field '{field}' must be bool")
-    if expected == "list" and not isinstance(value, list):
-        raise ParseError(f"field '{field}' must be list")
-    if expected in ("dict", "object", "map") and not isinstance(value, dict):
-        raise ParseError(f"field '{field}' must be object")
+    expected_options = [part.strip() for part in expected.split("|") if part.strip()]
+    if not expected_options:
+        expected_options = [expected]
+
+    def _is_valid_single(expected_type: str) -> bool:
+        if expected_type == "string":
+            return isinstance(value, str)
+        if expected_type == "int":
+            return isinstance(value, int)
+        if expected_type == "number":
+            return isinstance(value, (int, float))
+        if expected_type == "bool":
+            return isinstance(value, bool)
+        if expected_type == "list":
+            return isinstance(value, list)
+        if expected_type in ("dict", "object", "map"):
+            return isinstance(value, dict)
+        return True
+
+    if any(_is_valid_single(option) for option in expected_options):
+        return
+
+    if len(expected_options) == 1:
+        normalized = expected_options[0]
+        if normalized in ("dict", "map"):
+            normalized = "object"
+        raise ParseError(f"field '{field}' must be {normalized}")
+
+    normalized_options = ["object" if item in ("dict", "map") else item for item in expected_options]
+    raise ParseError(
+        f"field '{field}' must be one of types [{', '.join(normalized_options)}]"
+    )
 
 
 def _validate_scalar_rules(prefix: str, payload: dict[str, Any], regex_map: dict[str, str], enum_map: dict[str, list[Any]]) -> None:
@@ -429,7 +449,7 @@ def validate_against_schema(payload: dict[str, Any], block_type: str, schemas: d
 
     list_schemas = _extract_list_schemas(type_schema)
     for list_field, list_schema in list_schemas.items():
-        if list_field in payload:
+        if list_field in payload and isinstance(payload[list_field], list):
             _validate_list_items(list_field, payload[list_field], list_schema)
 
     _validate_files_paths(payload)
