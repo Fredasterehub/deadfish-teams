@@ -1,0 +1,115 @@
+# Task 05: Write CLAUDE.md v3
+
+Create `/tank/dump/DEV/deadfish-teams/CLAUDE.md` — the project-level contract that ALL teammates read.
+
+## Write this file at `/tank/dump/DEV/deadfish-teams/CLAUDE.md`:
+
+```markdown
+# deadfish-teams — Orchestrator Contract v3
+
+> "Only a dead fish follows the flow."
+
+## Mental Model: 4 Layers
+
+| Layer | What | Where |
+|-------|------|-------|
+| **State** | Tasks + dependencies + status | Claude Code native task list (`CLAUDE_CODE_TASK_LIST_ID`) |
+| **Artifacts** | Spec, plan, packets, conductor state, living docs | Git (reviewable, diffable) |
+| **Protocol** | `deadfish:TYPE` sentinels + verify.sh + build-verdict.py | `bin/` + `contracts/` |
+| **Roles** | Tool permissions + role prompts + skill injection | `agents/` + `skills/` |
+
+## Core Invariant
+
+**If it's real work, it exists as a Task. If it's not a Task, it's chatter.**
+
+## Team
+
+| Role | Model | Lifecycle | Purpose |
+|------|-------|-----------|---------|
+| Lead | Opus | Persistent | Traffic cop. Delegate mode always. Only reads: Task Graph, Verdicts, Summaries. |
+| Brainstormer | Opus | One-shot | BMAD ideation with human. Writes seed docs. No implementation. |
+| Planner | Sonnet | Per track | Spec + Plan + Task packets via GPT-5.2 (`codex-planner` MCP). |
+| Coder | Sonnet | Per track | Implements one packet at a time via GPT-5.3-Codex (`codex-coder` MCP). |
+| QA | Sonnet | Per track | verify.sh + criteria + verdict. Pessimistic by design. |
+| Conductor | Opus | Persistent | Drift, boundaries, stuck arbitration. "Are we building the right thing?" |
+| Doc-keeper | Haiku | Persistent | Living docs. Significance-gated. 7 files + scratch buffer. |
+| Integrator | Sonnet | On-demand | Cross-task friction only. Sutures, not surgery. |
+
+## Flow
+
+### Phase 1: Brainstorm (human-in-loop)
+1. Lead spawns Brainstormer
+2. Human talks directly to Brainstormer (Shift+Down)
+3. Seed docs written → Brainstormer shuts down
+4. Lead reads artifacts (context clean)
+
+### Phase 2: Autonomous (delegate mode)
+Lead presses Shift+Tab. For each track:
+
+**PLAN:** Spawn Planner → SPEC + PLAN + packets → Conductor evaluates → Planner shuts down
+**EXECUTE:** Lead converts Task Graph to native Tasks with dependencies. Coder claims → implements → QA verifies → Doc-keeper reflects. On 2x fail → Conductor arbitrates.
+**BOUNDARY:** Conductor evaluates track completion → CONTINUE | ADAPT | REPLAN | ESCALATE. Workers shut down. Next track.
+
+## Lifecycle
+
+Lead + Conductor + Doc-keeper: persistent (cross-track memory).
+Planner + Coder + QA + Integrator: rotate per track (fresh context).
+Handoff between tracks: files (plan.md, spec.md, living docs, git history).
+
+## Sentinel Format
+
+All structured output uses:
+
+    ```deadfish:TYPE
+    yaml: content
+    ```
+
+Types: SPEC, PLAN, TASK, VERDICT, CONDUCTOR, DOCSYNC, IMPLEMENT, INTEGRATE
+
+## Crash Recovery
+
+Set before starting: `export CLAUDE_CODE_TASK_LIST_ID="deadfish-<date>"`
+Task list persists across session crashes and restarts.
+
+## Lead Kickoff Prompt
+
+Paste this to start:
+
+    Create an AGENT TEAM named "deadfish" with these teammates:
+    1) brainstormer: product ideation + writes track seed docs only
+    2) planner: writes SPEC + PLAN + TASK packets only
+    3) coder: implements TASK packets; runs bin/verify.sh; commits per task
+    4) qa-reviewer: runs bin/verify.sh + acceptance criteria checks; produces VERDICT
+    5) conductor: drift + boundary evaluation; produces CONDUCTOR verdicts
+    6) doc-keeper: updates living docs only after PASS verdict
+    7) integrator: resolves cross-task friction ONLY when requested by Lead
+
+    Rules:
+    - I (Lead) operate in delegate mode and will not edit code.
+    - All work must be represented as Tasks with dependencies.
+    - Deterministic truth is bin/verify.sh output; LLM judgment is secondary.
+    - Use deadfish sentinel code fences for structured outputs.
+    Now spawn the teammates and wait for my next instruction.
+
+Then press Shift+Tab for delegate mode.
+```
+
+## Commit
+
+```bash
+cd /tank/dump/DEV/deadfish-teams
+git add CLAUDE.md
+git commit -m "feat: CLAUDE.md v3 orchestrator contract
+
+4-layer model, tasks-as-scheduler invariant, 8-role team,
+skills-first architecture, simplified sentinels, crash recovery."
+```
+
+## Acceptance Criteria
+- DET: CLAUDE.md exists at project root
+- DET: Contains "4 Layers" table
+- DET: Contains "If it's real work, it exists as a Task"
+- DET: Lists all 8 roles including Integrator
+- DET: Contains Lead Kickoff Prompt
+- DET: References CLAUDE_CODE_TASK_LIST_ID
+- DET: git commit created

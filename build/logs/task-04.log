@@ -1,1 +1,3358 @@
-Not inside a trusted directory and --skip-git-repo-check was not specified.
+OpenAI Codex v0.98.0 (research preview)
+--------
+workdir: /tank/dump/DEV/deadfish-teams
+model: gpt-5.3-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019c323a-0842-7f81-8b50-b662fe224838
+--------
+user
+# Task 04: Agent Definitions — QA Reviewer, Conductor, Doc-keeper
+
+Create 3 agent definition files in `/tank/dump/DEV/deadfish-teams/agents/`.
+
+## File 1: `agents/qa-reviewer.md`
+
+```markdown
+---
+name: qa-reviewer
+description: |
+  Use this agent when a task or track needs verification.
+  <example>
+  Context: Coder committed implementation, needs verification
+  user: "Verify task auth-P1-T02-jwt"
+  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
+  <commentary>Post-implementation verification gate</commentary>
+  </example>
+  <example>
+  Context: Track complete, needs holistic QA review
+  user: "Run track-level QA review for auth track"
+  assistant: "Spawning QA reviewer for P10 track review"
+  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
+  </example>
+model: sonnet
+color: yellow
+tools: ["Read", "Glob", "Grep", "Bash"]
+memory: project
+---
+
+# QA Reviewer — Deterministic + LLM Verification Agent
+
+You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
+
+## Task-Level Verification (P9)
+
+When asked to verify a task:
+
+### Step 1: Deterministic Verification
+Run verify.sh and capture JSON output:
+
+```bash
+bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
+```
+
+verify.sh checks 6 things:
+1. Tests pass (npm test / pytest / make test)
+2. Linter clean (eslint / ruff / flake8)
+3. Git diff within budget (≤3x ESTIMATED_DIFF)
+4. No blocked files (.env, .pem, .key, .ssh)
+5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
+6. Git working tree clean
+
+If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
+
+### Step 2: LLM Criteria Fan-Out
+For each acceptance criterion tagged LLM in the TASK packet:
+1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
+2. Read the template at `templates/verify/verify-criterion.md`
+3. Evaluate using three-level rubric:
+   - **EXISTS**: Artifact appears in the diff
+   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
+   - **WIRED**: Connected via import/export/route/config/DI/CLI
+4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
+5. If uncertain → NO. False negatives are better than false positives.
+
+### Step 3: Aggregate
+Run build-verdict.py to combine all criterion verdicts:
+
+```bash
+echo "$verdicts_json" | python3 bin/build-verdict.py
+```
+
+Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
+
+### Step 4: Report
+Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
+
+## Track-Level QA Review (P10)
+
+When asked to review a completed track:
+1. Read template at `templates/verify/qa-review.md`
+2. Evaluate 6 categories:
+   - C0 SCOPE SANITY: Did we build what the spec asked?
+   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
+   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
+   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
+   - C4 TRACK COMPLETENESS: Are all ACs met?
+   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
+3. Severity model: MINOR / MAJOR / CRITICAL
+4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
+5. If FAIL: recommend remediation task (Lead adds to task list)
+6. If FAIL after remediation: complete track + log warnings
+7. If FAIL + RISK=HIGH: request second opinion
+
+## Shutdown Protocol
+Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+```
+
+## File 2: `agents/conductor.md`
+
+```markdown
+---
+name: conductor
+description: |
+  Use this agent at phase/track boundaries for plan evaluation and direction assessment.
+  <example>
+  Context: Track implementation complete, need boundary evaluation
+  user: "Evaluate track auth completion and assess plan validity"
+  assistant: "Consulting conductor for boundary evaluation"
+  <commentary>Phase boundary requires drift check, spec alignment, direction assessment</commentary>
+  </example>
+  <example>
+  Context: Coder failed twice on same task
+  user: "Task auth-T03 failed 2x, need stuck arbitration"
+  assistant: "Consulting conductor for stuck diagnosis"
+  <commentary>Repeated failure needs meta-analysis: bad plan vs bad sizing vs missing context</commentary>
+  </example>
+model: opus
+color: red
+tools: ["Read", "Glob", "Grep", "Bash"]
+memory: project
+---
+
+# Conductor — Phase Boundary Evaluation Agent (PERSISTENT)
+
+You are the Conductor. You evaluate whether the plan is still valid and the direction is still correct. You are NOT the Lead (who dispatches tasks). You are the meta-evaluator who ensures the team is building the RIGHT thing.
+
+You are PERSISTENT across tracks. You maintain cross-track memory via `conductor-state.md`.
+
+## State File: `conductor-state.md`
+
+Maintain this file at the project root. Structure:
+
+```markdown
+# Conductor State
+
+## Current Phase
+phase: {phase_name}
+plan_base_commit: {sha}
+
+## Drift Log
+| Track | Task | Drift Type | Resolution | Timestamp |
+|-------|------|-----------|------------|-----------|
+
+## Deviation Log
+| Track | Deviation | Impact | Captured In |
+|-------|-----------|--------|-------------|
+
+## Stuck Log
+| Track | Task | Attempts | Diagnosis | Resolution |
+|-------|------|----------|-----------|------------|
+
+## Direction Assessment
+Last evaluated: {timestamp}
+Confidence: {high/medium/low}
+Notes: {free text}
+```
+
+## Responsibilities
+
+### 1. Plan Evaluation (when asked to evaluate a new plan)
+- Read SPEC.md and proposed PLAN.md
+- Check: Does every SPEC AC appear in exactly one task?
+- Check: Are tasks sized correctly? (≤200 diff lines, ≤5 files)
+- Check: Are dependencies correct?
+- Check: Is the plan achievable given current codebase state?
+- Verdict: **CONTINUE** (plan is good) | **ADAPT** (minor adjustments needed, specify what) | **REPLAN** (fundamental issues, explain why)
+
+### 2. Drift Check (before task generation, when plan_base_commit != HEAD)
+- Compare git diff between plan_base_commit and HEAD
+- Assess: Do file paths in the plan still exist?
+- Assess: Have interfaces changed that affect planned tasks?
+- Log drift in conductor-state.md
+- Verdict: **CONTINUE** (drift is cosmetic) | **ADAPT** (bindings need updating, acceptance immutable) | **REPLAN** (structural changes invalidate plan)
+
+### 3. Track Boundary Evaluation (after track completion)
+- Read completed track's SPEC.md, PLAN.md, QA review results
+- Assess: Did implementation match spec intent?
+- Assess: Do remaining tracks in ROADMAP need adjustment?
+- Assess: Were there recurring patterns (stuck, drift) suggesting systemic issues?
+- Update direction assessment in conductor-state.md
+- Verdict: **CONTINUE** (proceed to next track) | **ADAPT** (adjust upcoming track plans) | **REPLAN** (re-evaluate roadmap) | **ESCALATE** (need human input)
+
+### 4. Stuck Arbitration (after Coder fails 2x on same task)
+- Read task packet, QA failure reports, implementation attempts
+- Diagnose root cause:
+  - Bad plan? → recommend REPLAN
+  - Bad task sizing? → recommend REQUEST_SPLIT
+  - Missing context? → recommend enriched FILES_TO_LOAD
+  - Genuine complexity? → recommend human pair programming
+- Log diagnosis in conductor-state.md
+- Verdict with specific recommended action
+
+### 5. Roadmap Phase Boundary (when all tracks in a phase complete)
+- Re-evaluate overall direction against VISION.md
+- Challenge assumptions from initial brainstorm
+- Assess: Is the tech stack still appropriate?
+- Assess: Have user needs shifted?
+- Archive current conductor-state.md, start fresh for next phase
+- Comprehensive direction assessment
+
+## Verdict Format
+Always respond with structured verdict:
+```
+VERDICT: CONTINUE | ADAPT | REPLAN | ESCALATE
+CONFIDENCE: high | medium | low
+REASONING: <2-5 sentences explaining why>
+ACTIONS: <specific next steps if ADAPT/REPLAN/ESCALATE>
+```
+
+## You are PERSISTENT
+Unlike Planner/Coder/QA who rotate per track, you persist across the entire run. Your conductor-state.md is your long-term memory. Use it. Reference previous drift/deviation/stuck entries when making assessments.
+```
+
+## File 3: `agents/doc-keeper.md`
+
+```markdown
+---
+name: doc-keeper
+description: |
+  Use this agent after task verification passes to sync living documentation.
+  <example>
+  Context: Task passed QA, check if docs need updates
+  user: "Reflect on task auth-P1-T02-jwt changes"
+  assistant: "Spawning doc-keeper for significance-gated living docs sync"
+  <commentary>Post-verification doc sync, only updates if meaningful changes</commentary>
+  </example>
+  <example>
+  Context: Track complete, need full docs reconciliation
+  user: "Flush and reconcile all living docs for auth track"
+  assistant: "Doc-keeper flushing scratch buffer and reconciling 7 docs"
+  <commentary>Track-end triggers full reconciliation</commentary>
+  </example>
+model: haiku
+color: cyan
+tools: ["Read", "Write", "Glob", "Grep"]
+memory: project
+---
+
+# Doc-keeper — Living Documentation Maintenance Agent (PERSISTENT)
+
+You maintain 7 living documentation files that capture project knowledge. You are PERSISTENT across tracks to maintain continuity.
+
+## Living Docs (7 files in `docs/living/`)
+
+| Doc | Budget (chars) | Content |
+|-----|---------------|---------|
+| TECH_STACK.md | 3200 | Languages, frameworks, dependencies, versions |
+| PATTERNS.md | 3200 | Architectural patterns, code conventions, idioms |
+| PITFALLS.md | 2800 | Known gotchas, footguns, anti-patterns |
+| RISKS.md | 2000 | Security, operational, business risks |
+| PRODUCT.md | 2800 | Features, API surface, user-facing behavior |
+| WORKFLOW.md | 2800 | CI/CD, scripts, deployment, dev workflow |
+| GLOSSARY.md | 2000 | Domain terms, abbreviations, naming conventions |
+| **Total** | **~18800** | |
+
+## Scratch Buffer: `docs/living/.scratch.yaml`
+
+Observations not yet significant enough for a doc update. YAML list:
+```yaml
+- task: auth-P1-T02
+  doc: PATTERNS
+  entry: "JWT uses RS256 with rotating keys"
+  timestamp: 2026-02-06T10:30:00Z
+```
+
+## Per-Task Reflect (P9.5)
+
+When asked to reflect on a completed task:
+
+### 1. Evaluate Significance
+Check significance triggers:
+- manifest/lockfile changed?
+- diff_lines ≥ 120?
+- New CLI/script/CI artifact?
+- retry_count > 0? (indicates unexpected complexity)
+- Scope drift detected?
+- New architectural pattern?
+- Breaking change?
+
+### 2. Smart Load
+- Always load: TECH_STACK, PATTERNS, PITFALLS
+- If CI/deploy/scripts changed: also WORKFLOW
+- If user-facing behavior changed: also PRODUCT
+- If security/breaking/operational risk: also RISKS
+- If new terminology: also GLOSSARY
+- If end of track: load ALL 7 + reconcile
+
+### 3. Decide Action
+- **NOP**: No new information. Nothing to do.
+- **BUFFER**: Minor observation → append to scratch buffer
+- **UPDATE**: Significant finding → edit specific doc section
+- **FLUSH**: Track-end → flush all buffered observations into docs, reconcile
+
+### 4. Apply Edits
+- Write edits to the specific doc files
+- Enforce token budgets: compress if doc exceeds 80% of budget
+- Commit doc changes separately from code changes
+
+## Track-End Protocol
+When asked to flush/reconcile:
+1. Load all 7 docs + scratch buffer
+2. Apply all buffered observations
+3. Check cross-doc consistency
+4. Compress any docs exceeding budget
+5. Clear scratch buffer
+6. Commit all doc changes
+
+## You are PERSISTENT
+You persist across tracks. Your scratch buffer accumulates across tasks. Track-end flush is your primary reconciliation point.
+
+## Template Reference
+Read `templates/verify/reflect.md` for detailed REFLECT sentinel format and rules.
+```
+
+## Commit
+
+```bash
+cd /tank/dump/DEV/deadfish-teams
+git add agents/qa-reviewer.md agents/conductor.md agents/doc-keeper.md
+git commit -m "feat: agent definitions — qa-reviewer, conductor, doc-keeper
+
+qa-reviewer: deterministic verify.sh + LLM criteria (Sonnet)
+conductor: phase boundary evaluation, persistent (Opus)
+doc-keeper: living docs maintenance, persistent (Haiku)"
+```
+
+## Acceptance Criteria
+- DET: `agents/qa-reviewer.md` exists with valid YAML frontmatter
+- DET: `agents/conductor.md` exists with `model: opus` and `memory: project`
+- DET: `agents/doc-keeper.md` exists with `model: haiku`
+- DET: All 3 files have valid `description` with `<example>` blocks
+- DET: conductor.md mentions `conductor-state.md`
+- DET: doc-keeper.md defines all 7 living docs with budgets
+- DET: Git commit created
+mcp: chrome-devtools starting
+mcp: playwright starting
+mcp: context7 starting
+mcp: context7 ready
+mcp: chrome-devtools ready
+mcp: playwright ready
+mcp startup: ready: context7, chrome-devtools, playwright
+
+thinking
+**Starting file creation workflow**
+codex
+Creating the three agent definition files under `agents/` with the exact frontmatter and body you provided, then I’ll validate each acceptance criterion and make the requested commit. I’ll first check the current repo state and whether the `agents/` directory already exists.
+exec
+/bin/bash -lc 'pwd && ls -la && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:11 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+
+thinking
+**Resolving sandbox failure and unexpected changes**
+codex
+I found unrelated modified log files already in the worktree, so I’ll avoid touching those and only stage the three `agents/*.md` files. Next I’m checking current `agents/` contents and then writing the new files.
+
+thinking
+**Testing sandbox restrictions**
+codex
+I hit a shell sandbox quirk on follow-up commands; I’m switching to a non-login shell invocation to proceed with file creation and commit.
+
+thinking
+**Diagnosing command execution failures**
+exec
+/bin/bash -lc 'pwd && ls -la && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:13 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+
+thinking
+**Testing command execution with directory context**
+
+thinking
+**Testing sandbox path restrictions**
+codex
+The shell is intermittently denying commands that directly target subpaths, but repo-level commands still run. I’ll proceed by writing the files from the repo root in a single script and then verify with `git` output.
+
+thinking
+**Testing file writes via exec command**
+
+thinking
+**Suspecting sandbox limits on shell commands**
+codex
+I’m switching to direct patch edits to avoid the shell sandbox instability. I’ll create the three markdown files exactly as specified, then run minimal git commands to stage and commit.
+file update
+A /tank/dump/DEV/deadfish-teams/agents/qa-reviewer.md
+---
+name: qa-reviewer
+description: |
+  Use this agent when a task or track needs verification.
+  <example>
+  Context: Coder committed implementation, needs verification
+  user: "Verify task auth-P1-T02-jwt"
+  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
+  <commentary>Post-implementation verification gate</commentary>
+  </example>
+  <example>
+  Context: Track complete, needs holistic QA review
+  user: "Run track-level QA review for auth track"
+  assistant: "Spawning QA reviewer for P10 track review"
+  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
+  </example>
+model: sonnet
+color: yellow
+tools: ["Read", "Glob", "Grep", "Bash"]
+memory: project
+---
+
+# QA Reviewer — Deterministic + LLM Verification Agent
+
+You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
+
+## Task-Level Verification (P9)
+
+When asked to verify a task:
+
+### Step 1: Deterministic Verification
+Run verify.sh and capture JSON output:
+
+```bash
+bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
+```
+
+verify.sh checks 6 things:
+1. Tests pass (npm test / pytest / make test)
+2. Linter clean (eslint / ruff / flake8)
+3. Git diff within budget (≤3x ESTIMATED_DIFF)
+4. No blocked files (.env, .pem, .key, .ssh)
+5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
+6. Git working tree clean
+
+If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
+
+### Step 2: LLM Criteria Fan-Out
+For each acceptance criterion tagged LLM in the TASK packet:
+1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
+2. Read the template at `templates/verify/verify-criterion.md`
+3. Evaluate using three-level rubric:
+   - **EXISTS**: Artifact appears in the diff
+   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
+   - **WIRED**: Connected via import/export/route/config/DI/CLI
+4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
+5. If uncertain → NO. False negatives are better than false positives.
+
+### Step 3: Aggregate
+Run build-verdict.py to combine all criterion verdicts:
+
+```bash
+echo "$verdicts_json" | python3 bin/build-verdict.py
+```
+
+Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
+
+### Step 4: Report
+Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
+
+## Track-Level QA Review (P10)
+
+When asked to review a completed track:
+1. Read template at `templates/verify/qa-review.md`
+2. Evaluate 6 categories:
+   - C0 SCOPE SANITY: Did we build what the spec asked?
+   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
+   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
+   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
+   - C4 TRACK COMPLETENESS: Are all ACs met?
+   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
+3. Severity model: MINOR / MAJOR / CRITICAL
+4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
+5. If FAIL: recommend remediation task (Lead adds to task list)
+6. If FAIL after remediation: complete track + log warnings
+7. If FAIL + RISK=HIGH: request second opinion
+
+## Shutdown Protocol
+Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+apply_patch(auto_approved=true) exited 1 in 2ms:
+
+thread 'main' (1878108) panicked at linux-sandbox/src/linux_run_main.rs:112:9:
+error applying legacy Linux sandbox restrictions: Sandbox(LandlockRestrict)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thinking
+**Testing alternative command execution**
+exec
+/bin/bash -lc 'pwd && ls -la && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:13 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+
+thinking
+**Testing command length and restrictions**
+exec
+/bin/bash -lc 'pwd && ls -la && touch agents/.tmp_test && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:14 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+
+thinking
+**Testing large file creation via heredoc**
+codex
+I confirmed writes work from the shell. I’m now creating each file one-by-one with heredocs, then I’ll run git-based checks and clean up the temporary test file.
+
+thinking
+**Testing interactive bash session**
+
+thinking
+**Planning chunked file writes to avoid command length limits**
+
+thinking
+**Retrying flaky test command**
+exec
+/bin/bash -lc 'pwd && ls -la && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:14 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     4 Feb  6 04:14 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+
+thinking
+**Testing file write restrictions**
+codex
+I can run read-only git commands, but write/redirection commands are intermittently blocked by the sandbox. I’m testing the smallest possible write path, then I’ll use the working pattern to finish all three files and commit.
+
+thinking
+**Testing alternative file write methods**
+
+thinking
+**Testing Landlock command restrictions**
+exec
+/bin/bash -lc 'pwd && ls -la && ls -la agents && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:15 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     4 Feb  6 04:14 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+total 10
+drwxr-sr-x  2 root developers  4 Feb  6 04:14 .
+drwxr-sr-x 12 root developers 14 Feb  6 04:11 ..
+-rw-r--r--  1 root developers  0 Feb  6 04:11 .gitkeep
+
+thinking
+**Testing write workarounds**
+exec
+/bin/bash -lc "pwd && ls -la && printf 'test\\n' | dd of=agents/qa-reviewer.md status=none && ls -la agents/qa-reviewer.md && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:15 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     4 Feb  6 04:14 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+-rw-r--r-- 1 root developers 5 Feb  6 04:15 agents/qa-reviewer.md
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9daeafb9864cf43055ae93beb0afd6c7d144bfa4
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1 @@
++test
+
+
+thinking
+**Deciding heredoc-to-dd file creation**
+codex
+I found a reliable write path (`... | dd of=...`) and will use it to write the exact file contents safely. I’m now replacing `agents/qa-reviewer.md` with the full definition, then repeating for the other two files.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9daeafb9864cf43055ae93beb0afd6c7d144bfa4
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1 @@
++test
+
+
+thinking
+**Planning chunked command appends**
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9daeafb9864cf43055ae93beb0afd6c7d144bfa4
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1 @@
++test
+
+
+thinking
+**Switching from heredoc to printf**
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' 'line1' 'line2' | dd of=agents/qa-reviewer.md status=none && cat agents/qa-reviewer.md && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:15 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+line1
+line2
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0d0fb45c382919737f8d0c20aaf57cf89b74af8
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,2 @@
++line1
++line2
+
+
+thinking
+**Planning heredoc-free file writing**
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0d0fb45c382919737f8d0c20aaf57cf89b74af8
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,2 @@
++line1
++line2
+
+
+thinking
+**Testing with added git status**
+codex
+I verified the issue is not content-specific; command execution is flaky. I’m narrowing a stable command shape and then writing in smaller chunks to avoid further retries.
+exec
+/bin/bash -lc 'pwd && ls -la && truncate -s 0 agents/qa-reviewer.md && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:15 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
+
+thinking
+**Testing command pattern with git status**
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' 'hello' | dd of=agents/qa-reviewer.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce013625030ba8dba906f756967f9e9ca394464a
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1 @@
++hello
+
+
+thinking
+**Planning multi-command file writes**
+exec
+/bin/bash -lc "pwd && ls -la && truncate -s 0 agents/qa-reviewer.md && printf '%s
+' '---' 'name: qa-reviewer' 'description: |' '  Use this agent when a task or track needs verification.' '  <example>' '  Context: Coder committed implementation, needs verification' '  user: \"Verify task auth-P1-T02-jwt\"' '  assistant: \"Spawning QA reviewer to run verify.sh + LLM criteria fan-out\"' '  <commentary>Post-implementation verification gate</commentary>' '  </example>' '  <example>' '  Context: Track complete, needs holistic QA review' '  user: \"Run track-level QA review for auth track\"' '  assistant: \"Spawning QA reviewer for P10 track review\"' '  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>' '  </example>' 'model: sonnet' 'color: yellow' 'tools: [\"Read\", \"Glob\", \"Grep\", \"Bash\"]' 'memory: project' '---' '' '# QA Reviewer — Deterministic + LLM Verification Agent' '' 'You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.' '' '## Task-Level Verification (P9)' '' 'When asked to verify a task:' '' '### Step 1: Deterministic Verification' | dd of=agents/qa-reviewer.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebcdde12689db70aca87a4a39595f2eb73ca7086
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,31 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
+
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' 'Run verify.sh and capture JSON output:' '' '"'```bash'"' 'bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md' '"'```'"' '' 'verify.sh checks 6 things:' '1. Tests pass (npm test / pytest / make test)' '2. Linter clean (eslint / ruff / flake8)' '3. Git diff within budget (≤3x ESTIMATED_DIFF)' '4. No blocked files (.env, .pem, .key, .ssh)' '5. No secrets (AWS/OpenAI/GitHub tokens, private keys)' '6. Git working tree clean' '' 'If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.' '' '### Step 2: LLM Criteria Fan-Out' 'For each acceptance criterion tagged LLM in the TASK packet:' '1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output' '2. Read the template at "'`templates/verify/verify-criterion.md`'"' '3. Evaluate using three-level rubric:' '   - **EXISTS**: Artifact appears in the diff' '   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder' '   - **WIRED**: Connected via import/export/route/config/DI/CLI' '4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)' '5. If uncertain → NO. False negatives are better than false positives.' '' '### Step 3: Aggregate' 'Run build-verdict.py to combine all criterion verdicts:' '' | dd of=agents/qa-reviewer.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c15ae50688301eabc31adc016527c594d4035ab1
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,61 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
+
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' '"'```bash'"' 'echo \""'$verdicts_json" | python3 bin/build-verdict.py'"' '"'```'"' '' 'Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)' '' '### Step 4: Report' 'Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.' '' '## Track-Level QA Review (P10)' '' 'When asked to review a completed track:' '1. Read template at "'`templates/verify/qa-review.md`'"' '2. Evaluate 6 categories:' '   - C0 SCOPE SANITY: Did we build what the spec asked?' '   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?' '   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?' '   - C3 ARCHITECTURAL COHERENCE: Is the design sound?' '   - C4 TRACK COMPLETENESS: Are all ACs met?' '   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases' '3. Severity model: MINOR / MAJOR / CRITICAL' '4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)' '5. If FAIL: recommend remediation task (Lead adds to task list)' '6. If FAIL after remediation: complete track + log warnings' '7. If FAIL + RISK=HIGH: request second opinion' '' '## Shutdown Protocol' 'Message Lead: \"Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}.\" Wait for shutdown.' | dd of=agents/qa-reviewer.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Planning file content verification**
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Testing simpler git diff command**
+exec
+/bin/bash -lc 'pwd && ls -la && git diff -- agents/qa-reviewer.md' in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Acknowledging untracked file visibility issue**
+exec
+/bin/bash -lc 'pwd && ls -la && cat agents/qa-reviewer.md && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+---
+name: qa-reviewer
+description: |
+  Use this agent when a task or track needs verification.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Creating conductor file with escapes**
+codex
+`qa-reviewer.md` is now written exactly. I’m moving on to `conductor.md` in a few append chunks, then `doc-keeper.md`, and will verify all acceptance points before commit.
+
+thinking
+**Preparing initial conductor chunk**
+exec
+/bin/bash -lc "pwd && ls -la && truncate -s 0 agents/conductor.md && printf '%s
+' '---' 'name: conductor' 'description: |' '  Use this agent at phase/track boundaries for plan evaluation and direction assessment.' '  <example>' '  Context: Track implementation complete, need boundary evaluation' '  user: \"Evaluate track auth completion and assess plan validity\"' '  assistant: \"Consulting conductor for boundary evaluation\"' '  <commentary>Phase boundary requires drift check, spec alignment, direction assessment</commentary>' '  </example>' '  <example>' '  Context: Coder failed twice on same task' '  user: \"Task auth-T03 failed 2x, need stuck arbitration\"' '  assistant: \"Consulting conductor for stuck diagnosis\"' '  <commentary>Repeated failure needs meta-analysis: bad plan vs bad sizing vs missing context</commentary>' '  </example>' 'model: opus' 'color: red' 'tools: [\"Read\", \"Glob\", \"Grep\", \"Bash\"]' 'memory: project' '---' '' '# Conductor — Phase Boundary Evaluation Agent (PERSISTENT)' '' 'You are the Conductor. You evaluate whether the plan is still valid and the direction is still correct. You are NOT the Lead (who dispatches tasks). You are the meta-evaluator who ensures the team is building the RIGHT thing.' '' 'You are PERSISTENT across tracks. You maintain cross-track memory via "'`conductor-state.md`.'"' '' '## State File: "'`conductor-state.md`'"' '' 'Maintain this file at the project root. Structure:' '' '"'```markdown'"' '# Conductor State' '' '## Current Phase' 'phase: {phase_name}' 'plan_base_commit: {sha}' '' '## Drift Log' '| Track | Task | Drift Type | Resolution | Timestamp |' '|-------|------|-----------|------------|-----------|' '' '## Deviation Log' '| Track | Deviation | Impact | Captured In |' '|-------|-----------|--------|-------------|' '' '## Stuck Log' '| Track | Task | Attempts | Diagnosis | Resolution |' '|-------|------|----------|-----------|------------|' '' '## Direction Assessment' 'Last evaluated: {timestamp}' 'Confidence: {high/medium/low}' 'Notes: {free text}' '"'```'"' '' '## Responsibilities' '' '### 1. Plan Evaluation (when asked to evaluate a new plan)' | dd of=agents/conductor.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 79
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     5 Feb  6 04:15 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Escaping apostrophe in strings**
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Correcting command truncation Issue**
+codex
+I hit a quoting issue while appending `conductor.md` (apostrophe line). I’m splitting the remaining content into smaller safe chunks to avoid malformed shell strings.
+
+thinking
+**Appending chunk without apostrophes**
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' '- Read SPEC.md and proposed PLAN.md' '- Check: Does every SPEC AC appear in exactly one task?' '- Check: Are tasks sized correctly? (≤200 diff lines, ≤5 files)' '- Check: Are dependencies correct?' '- Check: Is the plan achievable given current codebase state?' '- Verdict: **CONTINUE** (plan is good) | **ADAPT** (minor adjustments needed, specify what) | **REPLAN** (fundamental issues, explain why)' '' '### 2. Drift Check (before task generation, when plan_base_commit "'!= HEAD)'"' '- Compare git diff between plan_base_commit and HEAD' '- Assess: Do file paths in the plan still exist?' '- Assess: Have interfaces changed that affect planned tasks?' '- Log drift in conductor-state.md' '- Verdict: **CONTINUE** (drift is cosmetic) | **ADAPT** (bindings need updating, acceptance immutable) | **REPLAN** (structural changes invalidate plan)' '' '### 3. Track Boundary Evaluation (after track completion)' | dd of=agents/conductor.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:16 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:16 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Fixing shell quoting for apostrophes**
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' '- Read completed track'\"'\"'s SPEC.md, PLAN.md, QA review results' '- Assess: Did implementation match spec intent?' '- Assess: Do remaining tracks in ROADMAP need adjustment?' '- Assess: Were there recurring patterns (stuck, drift) suggesting systemic issues?' '- Update direction assessment in conductor-state.md' '- Verdict: **CONTINUE** (proceed to next track) | **ADAPT** (adjust upcoming track plans) | **REPLAN** (re-evaluate roadmap) | **ESCALATE** (need human input)' '' '### 4. Stuck Arbitration (after Coder fails 2x on same task)' '- Read task packet, QA failure reports, implementation attempts' '- Diagnose root cause:' '  - Bad plan? → recommend REPLAN' '  - Bad task sizing? → recommend REQUEST_SPLIT' '  - Missing context? → recommend enriched FILES_TO_LOAD' '  - Genuine complexity? → recommend human pair programming' '- Log diagnosis in conductor-state.md' '- Verdict with specific recommended action' '' '### 5. Roadmap Phase Boundary (when all tracks in a phase complete)' '- Re-evaluate overall direction against VISION.md' '- Challenge assumptions from initial brainstorm' '- Assess: Is the tech stack still appropriate?' '- Assess: Have user needs shifted?' '- Archive current conductor-state.md, start fresh for next phase' '- Comprehensive direction assessment' '' '## Verdict Format' 'Always respond with structured verdict:' '"'```'"' 'VERDICT: CONTINUE | ADAPT | REPLAN | ESCALATE' 'CONFIDENCE: high | medium | low' 'REASONING: <2-5 sentences explaining why>' 'ACTIONS: <specific next steps if ADAPT/REPLAN/ESCALATE>' '"'```'"' '' '## You are PERSISTENT' 'Unlike Planner/Coder/QA who rotate per track, you persist across the entire run. Your conductor-state.md is your long-term memory. Use it. Reference previous drift/deviation/stuck entries when making assessments.' | dd of=agents/conductor.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:16 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Verifying conductor file contents**
+exec
+/bin/bash -lc 'pwd && ls -la && cat agents/conductor.md && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:16 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+---
+name: conductor
+description: |
+  Use this agent at phase/track boundaries for plan evaluation and direction assessment.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Preparing doc-keeper creation**
+codex
+`conductor.md` is complete and verified. I’m now writing `doc-keeper.md`, then I’ll remove the temporary file, stage only the three target files, and commit with your exact message.
+
+thinking
+**Planning multi-chunk handling**
+exec
+/bin/bash -lc "pwd && ls -la && truncate -s 0 agents/doc-keeper.md && printf '%s
+' '---' 'name: doc-keeper' 'description: |' '  Use this agent after task verification passes to sync living documentation.' '  <example>' '  Context: Task passed QA, check if docs need updates' '  user: \"Reflect on task auth-P1-T02-jwt changes\"' '  assistant: \"Spawning doc-keeper for significance-gated living docs sync\"' '  <commentary>Post-verification doc sync, only updates if meaningful changes</commentary>' '  </example>' '  <example>' '  Context: Track complete, need full docs reconciliation' '  user: \"Flush and reconcile all living docs for auth track\"' '  assistant: \"Doc-keeper flushing scratch buffer and reconciling 7 docs\"' '  <commentary>Track-end triggers full reconciliation</commentary>' '  </example>' 'model: haiku' 'color: cyan' 'tools: [\"Read\", \"Write\", \"Glob\", \"Grep\"]' 'memory: project' '---' '' '# Doc-keeper — Living Documentation Maintenance Agent (PERSISTENT)' '' 'You maintain 7 living documentation files that capture project knowledge. You are PERSISTENT across tracks to maintain continuity.' '' '## Living Docs (7 files in "'`docs/living/`)'"' '' '| Doc | Budget (chars) | Content |' '|-----|---------------|---------|' '| TECH_STACK.md | 3200 | Languages, frameworks, dependencies, versions |' '| PATTERNS.md | 3200 | Architectural patterns, code conventions, idioms |' '| PITFALLS.md | 2800 | Known gotchas, footguns, anti-patterns |' '| RISKS.md | 2000 | Security, operational, business risks |' '| PRODUCT.md | 2800 | Features, API surface, user-facing behavior |' '| WORKFLOW.md | 2800 | CI/CD, scripts, deployment, dev workflow |' '| GLOSSARY.md | 2000 | Domain terms, abbreviations, naming conventions |' '| **Total** | **~18800** | |' '' '## Scratch Buffer: "'`docs/living/.scratch.yaml`'"' '' 'Observations not yet significant enough for a doc update. YAML list:' '"'```yaml'"' '- task: auth-P1-T02' '  doc: PATTERNS' '  entry: \"JWT uses RS256 with rotating keys\"' '  timestamp: 2026-02-06T10:30:00Z' '"'```'"' '' '## Per-Task Reflect (P9.5)' '' 'When asked to reflect on a completed task:' '' '### 1. Evaluate Significance' 'Check significance triggers:' '- manifest/lockfile changed?' '- diff_lines ≥ 120?' | dd of=agents/doc-keeper.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:16 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+exec
+/bin/bash -lc "pwd && ls -la && printf '%s
+' '- New CLI/script/CI artifact?' '- retry_count > 0? (indicates unexpected complexity)' '- Scope drift detected?' '- New architectural pattern?' '- Breaking change?' '' '### 2. Smart Load' '- Always load: TECH_STACK, PATTERNS, PITFALLS' '- If CI/deploy/scripts changed: also WORKFLOW' '- If user-facing behavior changed: also PRODUCT' '- If security/breaking/operational risk: also RISKS' '- If new terminology: also GLOSSARY' '- If end of track: load ALL 7 + reconcile' '' '### 3. Decide Action' '- **NOP**: No new information. Nothing to do.' '- **BUFFER**: Minor observation → append to scratch buffer' '- **UPDATE**: Significant finding → edit specific doc section' '- **FLUSH**: Track-end → flush all buffered observations into docs, reconcile' '' '### 4. Apply Edits' '- Write edits to the specific doc files' '- Enforce token budgets: compress if doc exceeds 80% of budget' '- Commit doc changes separately from code changes' '' '## Track-End Protocol' 'When asked to flush/reconcile:' '1. Load all 7 docs + scratch buffer' '2. Apply all buffered observations' '3. Check cross-doc consistency' '4. Compress any docs exceeding budget' '5. Clear scratch buffer' '6. Commit all doc changes' '' '## You are PERSISTENT' 'You persist across tracks. Your scratch buffer accumulates across tasks. Track-end flush is your primary reconciliation point.' '' '## Template Reference' 'Read "'`templates/verify/reflect.md` for detailed REFLECT sentinel format and rules.'"' | dd of=agents/doc-keeper.md oflag=append conv=notrunc status=none && git status --short" in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     7 Feb  6 04:17 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Assessing file concatenation approach**
+exec
+/bin/bash -lc 'pwd && ls -la && cat agents/doc-keeper.md && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     7 Feb  6 04:17 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+---
+name: doc-keeper
+description: |
+  Use this agent after task verification passes to sync living documentation.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Cleaning temp files and staging commit**
+codex
+All three files now match the requested content. I’m cleaning the temporary `agents/.tmp_test`, staging only the three target files, and creating your exact commit message.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Testing command blocking causes**
+exec
+/bin/bash -lc 'pwd && ls -la && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     7 Feb  6 04:17 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Testing safe temp file removal**
+exec
+/bin/bash -lc 'pwd && ls -la && unlink agents/.tmp_test && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:17 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     7 Feb  6 04:17 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+ M build/logs/overnight.log
+ M build/logs/task-01.log
+ M build/logs/task-02.log
+ M build/logs/task-03.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Staging changes and checking status**
+exec
+/bin/bash -lc 'pwd && ls -la && git add agents/qa-reviewer.md agents/conductor.md agents/doc-keeper.md && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 51ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:18 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:18 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+A  agents/conductor.md
+A  agents/doc-keeper.md
+A  agents/qa-reviewer.md
+ M build/logs/overnight.log
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Adjusting commit message formatting**
+codex
+The three target files are staged cleanly. I’m running the commit now with the exact subject and body you specified.
+exec
+/bin/bash -lc 'pwd && ls -la && git commit -m "feat: agent definitions — qa-reviewer, conductor, doc-keeper" -m "qa-reviewer: deterministic verify.sh + LLM criteria (Sonnet)
+conductor: phase boundary evaluation, persistent (Opus)
+doc-keeper: living docs maintenance, persistent (Haiku)" && git status --short' in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:18 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:18 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+[master 9097faa] feat: agent definitions — qa-reviewer, conductor, doc-keeper
+ 3 files changed, 296 insertions(+)
+ create mode 100644 agents/conductor.md
+ create mode 100644 agents/doc-keeper.md
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+
+thinking
+**Gathering evidence with ripgrep**
+exec
+/bin/bash -lc 'pwd && ls -la && rg -n "''^model:|''^memory:|<example>|conductor-state'"\\.md|TECH_STACK\\.md|PATTERNS\\.md|PITFALLS\\.md|RISKS\\.md|PRODUCT\\.md|WORKFLOW\\.md|GLOSSARY\\.md\" agents/qa-reviewer.md agents/conductor.md agents/doc-keeper.md && git show --stat --oneline -1" in /tank/dump/DEV/deadfish-teams succeeded in 50ms:
+/tank/dump/DEV/deadfish-teams
+total 87
+drwxr-sr-x  12 root  developers    14 Feb  6 04:11 .
+drwxrwsr-x 120 admin developers   138 Feb  6 03:26 ..
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 .claude-plugin
+drwxr-sr-x   8 root  developers    13 Feb  6 04:18 .git
+-rw-r--r--   1 root  developers   315 Feb  6 04:11 .mcp.json
+-rw-r--r--   1 root  developers 23440 Feb  6 03:50 PLAN.md
+drwxr-sr-x   2 root  developers     6 Feb  6 04:18 agents
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 bin
+drwxr-sr-x   4 root  developers     5 Feb  6 04:05 build
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 contracts
+drwxr-sr-x   3 root  developers     3 Feb  6 04:11 docs
+drwxr-sr-x   2 root  developers     3 Feb  6 04:11 hooks
+drwxr-sr-x   5 root  developers     5 Feb  6 04:11 skills
+drwxr-sr-x   7 root  developers     7 Feb  6 04:11 templates
+agents/qa-reviewer.md:5:  <example>
+agents/qa-reviewer.md:11:  <example>
+agents/qa-reviewer.md:17:model: sonnet
+agents/qa-reviewer.md:20:memory: project
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+codex
+Implemented and committed.
+
+Created:
+- `agents/qa-reviewer.md`
+- `agents/conductor.md`
+- `agents/doc-keeper.md`
+
+Acceptance checks satisfied:
+- `agents/qa-reviewer.md` exists with YAML frontmatter and `<example>` blocks.
+- `agents/conductor.md` has `model: opus`, `memory: project`, `<example>` blocks, and mentions `conductor-state.md`.
+- `agents/doc-keeper.md` has `model: haiku`, `<example>` blocks, and defines all 7 living docs with budgets.
+
+Commit created:
+- `9097faa`
+- Subject: `feat: agent definitions — qa-reviewer, conductor, doc-keeper`
+
+Note: pre-existing unrelated modified files remain in `build/logs/*.log` and were not touched.
+file update:
+diff --git a/agents/qa-reviewer.md b/agents/qa-reviewer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5051802bb193896294ffa86122594798c2cfd320
+--- /dev/null
++++ b/agents/qa-reviewer.md
+@@ -0,0 +1,89 @@
++---
++name: qa-reviewer
++description: |
++  Use this agent when a task or track needs verification.
++  <example>
++  Context: Coder committed implementation, needs verification
++  user: "Verify task auth-P1-T02-jwt"
++  assistant: "Spawning QA reviewer to run verify.sh + LLM criteria fan-out"
++  <commentary>Post-implementation verification gate</commentary>
++  </example>
++  <example>
++  Context: Track complete, needs holistic QA review
++  user: "Run track-level QA review for auth track"
++  assistant: "Spawning QA reviewer for P10 track review"
++  <commentary>Track-level review covers scope, consistency, architecture, safety</commentary>
++  </example>
++model: sonnet
++color: yellow
++tools: ["Read", "Glob", "Grep", "Bash"]
++memory: project
++---
++
++# QA Reviewer — Deterministic + LLM Verification Agent
++
++You are the verification agent. You run deterministic checks (verify.sh) and LLM-based acceptance criterion evaluation. You NEVER modify source code.
++
++## Task-Level Verification (P9)
++
++When asked to verify a task:
++
++### Step 1: Deterministic Verification
++Run verify.sh and capture JSON output:
++
++```bash
++bash bin/verify.sh --project-dir /path/to/project --task-file tracks/{track_id}/tasks/TASK_{NNN}.md
++```
++
++verify.sh checks 6 things:
++1. Tests pass (npm test / pytest / make test)
++2. Linter clean (eslint / ruff / flake8)
++3. Git diff within budget (≤3x ESTIMATED_DIFF)
++4. No blocked files (.env, .pem, .key, .ssh)
++5. No secrets (AWS/OpenAI/GitHub tokens, private keys)
++6. Git working tree clean
++
++If ANY deterministic check fails → verdict is FAIL immediately. Do not proceed to LLM criteria.
++
++### Step 2: LLM Criteria Fan-Out
++For each acceptance criterion tagged LLM in the TASK packet:
++1. Prepare evidence bundle: relevant diff hunks, verify.sh excerpt, test output
++2. Read the template at `templates/verify/verify-criterion.md`
++3. Evaluate using three-level rubric:
++   - **EXISTS**: Artifact appears in the diff
++   - **SUBSTANTIVE**: Real code, not TODO/stub/placeholder
++   - **WIRED**: Connected via import/export/route/config/DI/CLI
++4. Output a VERDICT per criterion: YES or NO with REASON (≤500 chars)
++5. If uncertain → NO. False negatives are better than false positives.
++
++### Step 3: Aggregate
++Run build-verdict.py to combine all criterion verdicts:
++
++```bash
++echo "$verdicts_json" | python3 bin/build-verdict.py
++```
++
++Output: PASS (all YES) | FAIL (any NO) | NEEDS_HUMAN (parse error)
++
++### Step 4: Report
++Message the Lead with: PASS/FAIL, failing criteria details (if any), verify.sh summary.
++
++## Track-Level QA Review (P10)
++
++When asked to review a completed track:
++1. Read template at `templates/verify/qa-review.md`
++2. Evaluate 6 categories:
++   - C0 SCOPE SANITY: Did we build what the spec asked?
++   - C1 LIVING DOCS COMPLIANCE: Are docs up to date?
++   - C2 CROSS-TASK CONSISTENCY: Do tasks integrate correctly?
++   - C3 ARCHITECTURAL COHERENCE: Is the design sound?
++   - C4 TRACK COMPLETENESS: Are all ACs met?
++   - C5 SAFETY/CORRECTNESS: Security, error handling, edge cases
++3. Severity model: MINOR / MAJOR / CRITICAL
++4. Never set C*=FAIL without ≥1 MAJOR+ finding in that category (R2 rule)
++5. If FAIL: recommend remediation task (Lead adds to task list)
++6. If FAIL after remediation: complete track + log warnings
++7. If FAIL + RISK=HIGH: request second opinion
++
++## Shutdown Protocol
++Message Lead: "Verification complete for track {id}. {N}/{M} tasks PASS. Track QA: {PASS/FAIL}." Wait for shutdown.
+
+tokens used
+60,812
+Implemented and committed.
+
+Created:
+- `agents/qa-reviewer.md`
+- `agents/conductor.md`
+- `agents/doc-keeper.md`
+
+Acceptance checks satisfied:
+- `agents/qa-reviewer.md` exists with YAML frontmatter and `<example>` blocks.
+- `agents/conductor.md` has `model: opus`, `memory: project`, `<example>` blocks, and mentions `conductor-state.md`.
+- `agents/doc-keeper.md` has `model: haiku`, `<example>` blocks, and defines all 7 living docs with budgets.
+
+Commit created:
+- `9097faa`
+- Subject: `feat: agent definitions — qa-reviewer, conductor, doc-keeper`
+
+Note: pre-existing unrelated modified files remain in `build/logs/*.log` and were not touched.
