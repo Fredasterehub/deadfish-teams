@@ -381,6 +381,69 @@ for key in ("PLAN", "TASK", "ADR", "VERDICT", "VERDICT_CRITERION"):
 PY
 }
 
+check_compaction_hooks() {
+  local proj="${TMP_ROOT}/project"
+  local track_dir="${proj}/tracks/smoke"
+  local snapshot_path="${track_dir}/STATE_SNAPSHOT.md"
+  local precompact_log="${TMP_ROOT}/precompact.log"
+  local rehydrate_log="${TMP_ROOT}/rehydrate.log"
+
+  mkdir -p "${track_dir}" "${proj}/docs/adr"
+
+  cat > "${track_dir}/SPEC.md" <<'EOF_SPEC'
+```deadfish:SPEC
+track_id: smoke
+goal: Keep compaction snapshots deterministic and concise.
+non_goals:
+  - Refactoring installer internals
+acceptance_criteria:
+  - id: AC-01
+    type: DET
+    text: Snapshot is written before compact.
+```
+EOF_SPEC
+
+  cat > "${track_dir}/RISKS.md" <<'EOF_RISKS'
+- Snapshot can miss track context if track id is unavailable.
+- Session restart may skip rehydration if snapshot path is stale.
+EOF_RISKS
+
+  cat > "${track_dir}/NEXT_ACTIONS.md" <<'EOF_NEXT'
+- Verify SessionStart hook emits latest snapshot.
+- Expand risk parsing if richer metadata is needed.
+EOF_NEXT
+
+  cat > "${proj}/docs/adr/ADR-0001.md" <<'EOF_ADR'
+# ADR-0001
+
+Record snapshot-based rehydration for compacted sessions.
+EOF_ADR
+
+  DEADFISH_PLUGIN_ROOT="${REPO_ROOT}" \
+  CLAUDE_PROJECT_DIR="${proj}" \
+  CLAUDE_CODE_TASK_LIST_ID="deadfish-smoke" \
+  DEADFISH_TRACK_ID="smoke" \
+  DEADFISH_CURRENT_TASK="smoke-P1-T01" \
+  bash "${REPO_ROOT}/hooks/scripts/on-pre-compact.sh" > "${precompact_log}"
+
+  [[ -f "${snapshot_path}" ]]
+  grep -q "^## Current Goal" "${snapshot_path}"
+  grep -q "^## Current Task" "${snapshot_path}"
+  grep -q "^## Key Decisions" "${snapshot_path}"
+  grep -q "^## Open Risks" "${snapshot_path}"
+  grep -q "^## Next Actions" "${snapshot_path}"
+  grep -q "ADR-0001" "${snapshot_path}"
+
+  DEADFISH_PLUGIN_ROOT="${REPO_ROOT}" \
+  CLAUDE_PROJECT_DIR="${proj}" \
+  CLAUDE_CODE_TASK_LIST_ID="deadfish-smoke" \
+  DEADFISH_TRACK_ID="smoke" \
+  bash "${REPO_ROOT}/hooks/scripts/on-session-start.sh" > "${rehydrate_log}"
+
+  grep -q "DEADFISH SNAPSHOT START" "${rehydrate_log}"
+  grep -q "Current Goal" "${rehydrate_log}"
+}
+
 run_hook_tests() {
   bash "${REPO_ROOT}/tests/test-hooks.sh"
 }
@@ -392,8 +455,12 @@ main() {
 
   [[ -x "${BIN_DIR}/parse-blocks.py" ]]
   [[ -x "${BIN_DIR}/packet-to-task.py" ]]
+  [[ -x "${BIN_DIR}/new-track.py" ]]
+  [[ -x "${BIN_DIR}/plan-to-packets.py" ]]
   [[ -x "${BIN_DIR}/build-verdict.py" ]]
   [[ -x "${BIN_DIR}/verify.sh" ]]
+  [[ -x "${REPO_ROOT}/hooks/scripts/on-pre-compact.sh" ]]
+  [[ -x "${REPO_ROOT}/hooks/scripts/on-session-start.sh" ]]
 
   print_header
 
@@ -406,6 +473,7 @@ main() {
   run_phase "run verify.sh post-commit" "verify_post" run_verify_post_commit
   run_phase "run hook scripts" "hooks" run_hook_tests
   run_phase "parse+build verdict (v3)" "verdict" parse_and_build_verdict
+  run_phase "compaction hooks write + rehydrate snapshot" "compaction_hooks" check_compaction_hooks
   run_phase "docs/living exists and writable" "docs_living" check_docs_living_writable
   run_phase "v3 schemas load" "schemas" check_schemas_load
 

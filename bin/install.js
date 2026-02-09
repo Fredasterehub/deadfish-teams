@@ -25,6 +25,7 @@ function usage() {
     "",
     "Overrides:",
     "  --provider <mode>        anthropic-only|codex-mcp|hybrid",
+    "  --team-mode <mode>       lite|full (default: lite)",
     "  --planner-model <id>     Planner model id",
     "  --coder-model <id>       Coder model id",
     "  --qa-model <id>          QA model id",
@@ -34,6 +35,7 @@ function usage() {
     "Examples:",
     "  deadfish-teams init",
     "  deadfish-teams --global",
+    "  deadfish-teams --local --team-mode full",
     "  deadfish-teams --local --dry-run",
     "  deadfish-teams --global --provider hybrid --planner-model gpt-5.2"
   ].join("\n");

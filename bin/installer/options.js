@@ -2,6 +2,7 @@ const readline = require("readline/promises");
 
 const DEFAULTS = Object.freeze({
   provider: "hybrid",
+  teamMode: "lite",
   plannerModel: "gpt-5.2",
   coderModel: "gpt-5.3-codex",
   qaModel: "gpt-5.3-codex",
@@ -10,12 +11,14 @@ const DEFAULTS = Object.freeze({
 });
 
 const PROVIDERS = new Set(["anthropic-only", "codex-mcp", "hybrid"]);
+const TEAM_MODES = new Set(["lite", "full"]);
 
 /**
  * @typedef {Object} Options
  * @property {"init"|"install"} command
  * @property {"global"|"local"|null} scope
  * @property {"anthropic-only"|"codex-mcp"|"hybrid"} provider
+ * @property {"lite"|"full"} teamMode
  * @property {string} plannerModel
  * @property {string} coderModel
  * @property {string} qaModel
@@ -65,6 +68,9 @@ function parseArgs(argv, env) {
     provider: env.DEADFISH_PROVIDER && PROVIDERS.has(env.DEADFISH_PROVIDER)
       ? env.DEADFISH_PROVIDER
       : DEFAULTS.provider,
+    teamMode: env.DEADFISH_TEAM_MODE && TEAM_MODES.has(env.DEADFISH_TEAM_MODE)
+      ? env.DEADFISH_TEAM_MODE
+      : DEFAULTS.teamMode,
     plannerModel: env.DEADFISH_PLANNER_MODEL || DEFAULTS.plannerModel,
     coderModel: env.DEADFISH_CODER_MODEL || DEFAULTS.coderModel,
     qaModel: env.DEADFISH_QA_MODEL || DEFAULTS.qaModel,
@@ -121,6 +127,17 @@ function parseArgs(argv, env) {
         );
       }
       options.provider = value;
+      i += 1;
+      continue;
+    }
+    if (arg === "--team-mode") {
+      const value = requireValue(argv, i, "--team-mode");
+      if (!TEAM_MODES.has(value)) {
+        throw new Error(
+          `Invalid team mode: ${value} (expected lite|full)`
+        );
+      }
+      options.teamMode = value;
       i += 1;
       continue;
     }
@@ -194,9 +211,10 @@ async function askYesNo(rl, label, defaultValue) {
  * Prompt order is fixed by Round 4 overview:
  * 1) scope
  * 2) provider
- * 3) planner/coder/qa models
- * 4) brownfield default
- * 5) task list id pattern
+ * 3) team mode
+ * 4) planner/coder/qa models
+ * 5) brownfield default
+ * 6) task list id pattern
  *
  * @param {Options} partial
  * @returns {Promise<Options>}
@@ -210,6 +228,12 @@ async function promptInteractive(partial) {
       "Provider routing",
       ["anthropic-only", "codex-mcp", "hybrid"],
       partial.provider || DEFAULTS.provider
+    );
+    const teamMode = await askChoice(
+      rl,
+      "Team mode",
+      ["lite", "full"],
+      partial.teamMode || DEFAULTS.teamMode
     );
     const plannerModel = await askText(rl, "Planner model id", partial.plannerModel || DEFAULTS.plannerModel);
     const coderModel = await askText(rl, "Coder model id", partial.coderModel || DEFAULTS.coderModel);
@@ -230,6 +254,7 @@ async function promptInteractive(partial) {
       command: "init",
       scope,
       provider,
+      teamMode,
       plannerModel,
       coderModel,
       qaModel,

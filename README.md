@@ -127,22 +127,26 @@ node deadfish-teams/bin/install.js --local
 
 Then open Claude Code in your project, paste the kickoff prompt from [`CLAUDE.md`](./CLAUDE.md), press **Shift+Tab** for delegate mode, and give it a goal. That's it. 🎬
 
+By default, installs run in **Deadfish Lite** mode (Planner + Coder + QA + Integrator).<br/>
+Opt in to **Deadfish Full Team** with `--team-mode full`.
+
 <details>
 <summary>📖 <strong>Full install guide + all options</strong></summary>
 
 ### Interactive setup
 
 ```bash
-node bin/install.js init    # asks 5 questions, sets everything up
+node bin/install.js init    # asks 6 questions, sets everything up
 ```
 
-**Questions asked:** scope (global/local), provider routing (`anthropic-only` | `codex-mcp` | `hybrid`), model preferences, brownfield detection toggle, task list ID pattern.
+**Questions asked:** scope (global/local), provider routing (`anthropic-only` | `codex-mcp` | `hybrid`), team mode (`lite` | `full`), model preferences, brownfield detection toggle, task list ID pattern.
 
 ### Non-interactive
 
 ```bash
 node bin/install.js --global                      # defaults, global scope
 node bin/install.js --local --provider hybrid     # local, hybrid routing
+node bin/install.js --local --team-mode full      # opt in to full roster
 node bin/install.js --uninstall                   # clean removal
 node bin/install.js --local --dry-run             # preview without writing
 ```
@@ -305,9 +309,9 @@ decision: PASS
 ```
 ````
 
-**11 types**, each with a [schema](./contracts/sentinel/v3/schemas.yaml):
+**12 types**, each with a [schema](./contracts/sentinel/v3/schemas.yaml):
 
-`SPEC` · `PLAN` · `TASK` · `TRACK` · `VERDICT` · `VERDICT_CRITERION` · `CONDUCTOR` · `DOCSYNC` · `IMPLEMENT` · `INTEGRATE` · `DIAGNOSTIC`
+`SPEC` · `PLAN` · `TASK` · `TRACK` · `ADR` · `VERDICT` · `VERDICT_CRITERION` · `CONDUCTOR` · `DOCSYNC` · `IMPLEMENT` · `INTEGRATE` · `DIAGNOSTIC`
 
 Parsed by [`parse-blocks.py`](./bin/parse-blocks.py). Verdicts aggregated by [`build-verdict.py`](./bin/build-verdict.py). If a block doesn't validate, it's a protocol error &mdash; not a matter of opinion.
 
@@ -327,6 +331,8 @@ Parsed by [`parse-blocks.py`](./bin/parse-blocks.py). Verdicts aggregated by [`b
 | 🔐 Secrets | Credentials in the diff |
 | 🧹 Git clean | Uncommitted changes (post-commit) |
 
+Exit contract is explicit and consistent: `verify.sh` exits `0` when `pass=true`, and non-zero when `pass=false`.
+
 The QA agent evaluates each acceptance criterion with a **three-tier rubric**:
 
 | Tier | Meaning |
@@ -336,6 +342,28 @@ The QA agent evaluates each acceptance criterion with a **three-tier rubric**:
 | **WIRED** | Connected into the system (imported, routed, tested) |
 
 All three must pass. Intentionally pessimistic: false negatives are OK, false positives are expensive. 🎯
+
+</details>
+
+<details>
+<summary>🧠 <strong>Track memory + rehydration</strong></summary>
+
+Deadfish now includes deterministic compaction hooks:
+
+- `PreCompact` writes a concise state snapshot (goal, task, key decisions, risks, next actions)
+- `SessionStart` re-injects the latest snapshot into session output after restart/compact
+
+Track structure and fallback paths are documented here: [`docs/track-rehydration.md`](./docs/track-rehydration.md).<br/>
+Snapshot format reference: [`templates/track/state-snapshot.md`](./templates/track/state-snapshot.md).
+
+</details>
+
+<details>
+<summary>🏛️ <strong>ADR + conductor reconciliation</strong></summary>
+
+Accepted high-impact decisions are captured as ADR-ready content, then reconciled by Conductor against plan/packet/commit evidence before boundary verdicts.
+
+Flow and mismatch protocol: [`docs/adr-conductor-reconciliation.md`](./docs/adr-conductor-reconciliation.md).
 
 </details>
 
@@ -387,6 +415,13 @@ The installer generates two files:
 install:
   scope: 'global'
   provider: 'hybrid'
+team:
+  mode: 'lite'
+  default_agents:
+    - 'planner'
+    - 'coder'
+    - 'qa-reviewer'
+    - 'integrator'
 models:
   planner: 'gpt-5.2'
   coder: 'gpt-5.3-codex'
@@ -395,6 +430,15 @@ features:
   brownfield_detection: true
 task_list_id_pattern: 'deadfish-YYYYMMDD'
 ```
+
+Switch to the full roster with:
+
+```bash
+node bin/install.js --local --team-mode full
+```
+
+**Deadfish Lite (default):** planner, coder, qa-reviewer, integrator<br/>
+**Deadfish Full Team:** discoverer, brainstormer, planner, coder, qa-reviewer, conductor, doc-keeper, integrator
 
 **`.mcp.json`** &mdash; Codex MCP servers (for `codex-mcp` / `hybrid`):
 ```json
@@ -434,6 +478,7 @@ deadfish-teams/
 │   ├── discover-collect.sh      evidence collector
 │   └── installer/               install machinery
 ├── hooks/                     lifecycle events
+├── docs/                      track memory + ADR reconciliation docs
 ├── docs/living/               7 living docs
 ├── tests/                     17 tests (smoke + installer)
 ├── CLAUDE.md                  orchestrator contract
@@ -465,7 +510,7 @@ _Last refreshed: 2026-02-09 08:40 UTC_
 ## 🧪 Tests
 
 ```bash
-bash tests/smoke-run.sh       # 10 protocol tests
+bash tests/smoke-run.sh       # 12 protocol tests
 bash tests/test-installer.sh  # 7 installer tests
 ```
 
@@ -475,7 +520,6 @@ bash tests/test-installer.sh  # 7 installer tests
 
 - 🆕 **Agent Teams is experimental** &mdash; [just shipped Feb 5, 2026](https://techcrunch.com/2026/02/05/anthropic-releases-opus-4-6-with-new-agent-teams/) &mdash; expect rough edges
 - 🤖 **GPT-5.3 model availability** &mdash; verify your subscription supports the model IDs you configure
-- 📊 **No context budget management yet** &mdash; long sessions may hit token limits
 - 🧪 **Quality depends on your gates** &mdash; invest in your test suite and linter config
 
 ---

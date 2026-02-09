@@ -9,6 +9,7 @@ const PLUGIN_ROOT_PLACEHOLDER = '__DEADFISH_PLUGIN_ROOT__';
  * @typedef {Object} Options
  * @property {string=} scope
  * @property {string=} provider
+ * @property {string=} teamMode
  * @property {string=} plannerModel
  * @property {string=} coderModel
  * @property {string=} qaModel
@@ -76,6 +77,43 @@ function resolveProvider(options) {
 
 /**
  * @param {Options} options
+ * @returns {'lite'|'full'}
+ */
+function resolveTeamMode(options) {
+  const teamMode = asString(options.teamMode).toLowerCase();
+  if (teamMode === 'full' || teamMode === 'lite') {
+    return teamMode;
+  }
+  return 'lite';
+}
+
+/**
+ * @param {'lite'|'full'} teamMode
+ * @returns {string[]}
+ */
+function resolveTeamAgents(teamMode) {
+  if (teamMode === 'full') {
+    return [
+      'discoverer',
+      'brainstormer',
+      'planner',
+      'coder',
+      'qa-reviewer',
+      'conductor',
+      'doc-keeper',
+      'integrator',
+    ];
+  }
+  return [
+    'planner',
+    'coder',
+    'qa-reviewer',
+    'integrator',
+  ];
+}
+
+/**
+ * @param {Options} options
  */
 function resolveModels(options) {
   return {
@@ -105,6 +143,8 @@ function resolveBrownfieldDetection(options) {
  */
 function renderConfig(options = {}) {
   const provider = resolveProvider(options);
+  const teamMode = resolveTeamMode(options);
+  const defaultAgents = resolveTeamAgents(teamMode);
   const models = resolveModels(options);
 
   const scope = asString(options.scope) || 'global';
@@ -125,6 +165,15 @@ function renderConfig(options = {}) {
 
   yamlLines.push(
     `  provider: ${yamlScalar(provider)}`,
+    'team:',
+    `  mode: ${yamlScalar(teamMode)}`,
+    '  default_agents:'
+  );
+  for (const agentName of defaultAgents) {
+    yamlLines.push(`    - ${yamlScalar(agentName)}`);
+  }
+
+  yamlLines.push(
     'models:',
     `  planner: ${yamlScalar(models.planner)}`,
     `  coder: ${yamlScalar(models.coder)}`,

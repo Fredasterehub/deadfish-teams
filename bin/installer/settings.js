@@ -12,6 +12,8 @@ const HOOK_SPECS = [
   { event: 'TaskCompleted', script: 'on-task-completed.sh' },
   { event: 'TeammateIdle', script: 'on-teammate-idle.sh' },
   { event: 'SubagentStop', script: 'on-subagent-stop.sh' },
+  { event: 'PreCompact', script: 'on-pre-compact.sh' },
+  { event: 'SessionStart', script: 'on-session-start.sh' },
 ];
 
 function assertNonEmptyString(value, label) {
