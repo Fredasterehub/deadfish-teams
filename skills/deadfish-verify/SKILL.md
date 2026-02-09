@@ -27,7 +27,7 @@ Task `## FILES` canonical format:
 ```
 Compat accepted: `path=src/foo.ts action=add`
 Checks: tests, linter, diff budget (<=3x ESTIMATED_DIFF), scope/blocked files, secrets, git clean (post-commit only).
-Output: structured JSON. Exit 0 always (result in JSON `pass` field).
+Output: structured JSON. Exit `0` when `pass=true`; exit non-zero when `pass=false`.
 
 ## Criteria Rubric (for LLM-tagged ACs)
 Three levels — ALL must pass:

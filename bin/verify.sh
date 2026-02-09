@@ -11,13 +11,64 @@
 #   6. Git clean check   — no uncommitted files after implementation
 #
 # Output: structured JSON to stdout (all diagnostic logging to stderr).
-# Exit 0 always (result carried in JSON "pass" field).
-# Exit 1 only on internal error (cannot produce valid JSON).
+# Exit 0 when pass=true.
+# Exit non-zero when pass=false.
 #
 # This script NEVER interprets or judges results. Facts only.
 # The orchestrator (Clawdbot) and LLM verifier handle judgment.
 
 set -uo pipefail
+SCRIPT_CONTRACT_VERSION="verify-exitcode-v1"
+JSON_EMITTED=false
+
+preflight_json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+emit_preflight_json_and_exit() {
+  local pass="$1"
+  local exit_code="$2"
+  local message="${3:-}"
+  local timestamp
+  JSON_EMITTED=true
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  local failures_json="[]"
+  if [[ "$pass" != "true" && -n "$message" ]]; then
+    failures_json="[\"$(preflight_json_escape "$message")\"]"
+  fi
+
+  cat <<EOF
+{
+  "pass": ${pass},
+  "checks": {
+    "preflight": true,
+    "error": "$(preflight_json_escape "$message")"
+  },
+  "failures": ${failures_json},
+  "timestamp": "${timestamp}",
+  "metadata": {
+    "contract_version": "${SCRIPT_CONTRACT_VERSION}",
+    "phase": "preflight"
+  }
+}
+
+emit_internal_error_fallback() {
+  local exit_code="$1"
+  trap - EXIT
+  emit_preflight_json_and_exit false "${exit_code}" "internal verifier error (exit ${exit_code})"
+}
+
+trap 'status=$?; if [[ "${JSON_EMITTED}" != "true" ]]; then emit_internal_error_fallback "${status:-1}"; fi' EXIT
+EOF
+  exit "$exit_code"
+}
 
 # ── CLI / Configuration ────────────────────────────────────────────────────
 usage() {
@@ -36,7 +87,7 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --project-dir)
-        [[ $# -ge 2 ]] || { echo "ERROR: --project-dir requires a value" >&2; exit 1; }
+        [[ $# -ge 2 ]] || emit_preflight_json_and_exit false 1 "--project-dir requires a value"
         CLI_PROJECT_DIR="$2"
         shift 2
         ;;
@@ -45,7 +96,7 @@ parse_args() {
         shift
         ;;
       --task-file)
-        [[ $# -ge 2 ]] || { echo "ERROR: --task-file requires a value" >&2; exit 1; }
+        [[ $# -ge 2 ]] || emit_preflight_json_and_exit false 1 "--task-file requires a value"
         CLI_TASK_FILE="$2"
         shift 2
         ;;
@@ -54,7 +105,7 @@ parse_args() {
         shift
         ;;
       --base-commit)
-        [[ $# -ge 2 ]] || { echo "ERROR: --base-commit requires a value" >&2; exit 1; }
+        [[ $# -ge 2 ]] || emit_preflight_json_and_exit false 1 "--base-commit requires a value"
         CLI_BASE_COMMIT="$2"
         shift 2
         ;;
@@ -63,7 +114,7 @@ parse_args() {
         shift
         ;;
       --mode)
-        [[ $# -ge 2 ]] || { echo "ERROR: --mode requires a value" >&2; exit 1; }
+        [[ $# -ge 2 ]] || emit_preflight_json_and_exit false 1 "--mode requires a value"
         CLI_MODE="$2"
         shift 2
         ;;
@@ -72,13 +123,12 @@ parse_args() {
         shift
         ;;
       -h|--help)
-        usage
-        exit 0
+        usage >&2
+        emit_preflight_json_and_exit true 0 "help requested"
         ;;
       *)
-        echo "ERROR: unknown argument: $1" >&2
         usage >&2
-        exit 1
+        emit_preflight_json_and_exit false 1 "unknown argument: $1"
         ;;
     esac
   done
@@ -99,8 +149,7 @@ CHECK_TIMEOUT="${VERIFY_CHECK_TIMEOUT:-120}"
 case "$MODE" in
   pre-commit|post-commit) ;;
   *)
-    echo "ERROR: --mode must be pre-commit or post-commit (got '$MODE')" >&2
-    exit 1
+    emit_preflight_json_and_exit false 1 "--mode must be pre-commit or post-commit (got '$MODE')"
     ;;
 esac
 
@@ -680,6 +729,7 @@ check_git_clean() {
 
 emit_json() {
   local timestamp
+  JSON_EMITTED=true
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
   # Build JSON arrays for blocked_files, secret_matches, uncommitted_files, failures
@@ -746,7 +796,16 @@ emit_json() {
     "uncommitted_files": ${uncommitted_json}
   },
   "failures": ${failures_json},
-  "timestamp": "${timestamp}"
+  "timestamp": "${timestamp}",
+  "metadata": {
+    "contract_version": "${SCRIPT_CONTRACT_VERSION}",
+    "mode": "$(json_escape "$MODE")",
+    "project_dir": "$(json_escape "$PROJECT_DIR")",
+    "task_file": "$(json_escape "$TASK_FILE")",
+    "base_commit": "$(json_escape "$BASE_COMMIT")",
+    "diff_base_ref": "$(json_escape "$DIFF_BASE_REF")",
+    "check_timeout_seconds": "$(json_escape "$CHECK_TIMEOUT")"
+  }
 }
 EOF
 }
@@ -785,8 +844,13 @@ main() {
   # Emit structured JSON to stdout
   emit_json
 
-  log "Verification complete. pass=${PASS}, failures=${#FAILURES[@]}"
-  exit 0
+  local exit_code=1
+  if [[ "$PASS" == "true" ]]; then
+    exit_code=0
+  fi
+
+  log "Verification complete. pass=${PASS}, failures=${#FAILURES[@]}, exit_code=${exit_code}"
+  exit "${exit_code}"
 }
 
 main

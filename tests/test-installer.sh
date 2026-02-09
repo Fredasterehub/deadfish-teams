@@ -323,6 +323,8 @@ assert_local_payload_copied() {
   assert_exists "${plugin_root}/templates"
   assert_exists "${plugin_root}/contracts"
   assert_exists "${plugin_root}/hooks"
+  assert_exists "${plugin_root}/hooks/scripts/on-protected-write.sh"
+  assert_exists "${plugin_root}/hooks/scripts/on-task-completed.sh"
   assert_exists "${plugin_root}/bin"
   assert_exists "${plugin_root}/scripts"
   assert_exists "${plugin_root}/.claude-plugin"
@@ -376,6 +378,8 @@ main() {
   assert_exists "${global_plugin_root}"
   assert_exists "${TEST_HOME}/.claude/settings.json"
   grep -q '"deadfish_teams"' "${TEST_HOME}/.claude/settings.json"
+  grep -q '"PreToolUse"' "${TEST_HOME}/.claude/settings.json"
+  grep -q 'on-protected-write.sh' "${TEST_HOME}/.claude/settings.json"
 
   echo "[6/7] local uninstall"
   run_install --local --uninstall >/dev/null
