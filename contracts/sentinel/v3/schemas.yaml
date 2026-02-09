@@ -189,3 +189,18 @@ INTEGRATE:
     verify_sh: [PASS, FAIL]
   regex:
     nonce: '^[0-9A-F]{6}$'
+
+DIAGNOSTIC:
+  required:
+    - outcome: string
+  optional:
+    - corrected_block: string
+    - component: string
+    - explanation: string
+    - suggested_fix: string
+    - nonce: string
+  enum:
+    outcome: [FIXED, MISMATCH]
+    component: [PARSER, PROMPT, BOTH]
+  regex:
+    nonce: '^[0-9A-F]{6}$'

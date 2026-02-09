@@ -25,7 +25,7 @@ All structured output uses deadfish code fences. Pick the right type and emit va
       - item
     ```
 
-Types: `SPEC`, `PLAN`, `TASK`, `VERDICT`, `CONDUCTOR`, `DOCSYNC`, `IMPLEMENT`, `INTEGRATE`
+Types: `SPEC`, `PLAN`, `TASK`, `TRACK`, `VERDICT`, `VERDICT_CRITERION`, `CONDUCTOR`, `DOCSYNC`, `IMPLEMENT`, `INTEGRATE`, `DIAGNOSTIC`
 
 ## Task Naming
 ```
