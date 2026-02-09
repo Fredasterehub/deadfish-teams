@@ -7,6 +7,7 @@ INPUTS
 - REQUIREMENTS.md (source truth for requirement intent)
 - PROJECT.md + OPS.md (constraints, quality gates)
 - Code search evidence supplied by orchestrator
+- Durable artifact location (`tracks/<YYYY-MM-DD>-<track_id>/spec.md`)
 
 OBJECTIVE
 Emit exactly one `deadfish:SPEC` block aligned to v3 schema.

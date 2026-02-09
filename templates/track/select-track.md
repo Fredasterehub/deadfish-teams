@@ -6,6 +6,7 @@ INPUTS
 - ROADMAP.md (current phase, goals, success criteria, requirement IDs)
 - REQUIREMENTS.md (status and text for phase requirements)
 - PROJECT.md + VISION.md (constraints and direction)
+- Existing `tracks/` directories (if present) to avoid duplicate track IDs
 
 OBJECTIVE
 Select exactly one track and emit exactly one `deadfish:TRACK` block.
@@ -20,6 +21,8 @@ status: selected|planning|executing|complete|blocked
 requirements:
   - <requirement id>
   - <requirement id>
+spec_path: tracks/<YYYY-MM-DD>-<track_id>/spec.md
+plan_path: tracks/<YYYY-MM-DD>-<track_id>/plan.md
 nonce: <optional 6-char uppercase hex>
 ```
 
@@ -27,6 +30,8 @@ RULES
 - `requirements` must be a subset of requirement IDs from the current phase.
 - Prefer unblocked work that advances unmet phase success criteria.
 - Keep scope small (target 2-5 tasks worth of work).
+- For active work (`selected|planning|executing`), include `spec_path` and `plan_path`.
+- `spec_path` and `plan_path` must share one durable root: `tracks/<YYYY-MM-DD>-<track_id>/`.
 - If phase is done, still emit TRACK with `status: complete` and `requirements: []`.
 - If all remaining work is blocked, emit TRACK with `status: blocked` and blocked requirement IDs.
 
@@ -38,6 +43,8 @@ status: selected
 requirements:
   - REQ-101
   - REQ-104
+spec_path: tracks/2026-02-09-auth/spec.md
+plan_path: tracks/2026-02-09-auth/plan.md
 nonce: A3F2C1
 ```
 
