@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python3 - <<'PY'
+hook_input="$(cat || true)"
+
+HOOK_INPUT_JSON="${hook_input}" python3 - <<'PY'
 import json
 import os
 import sys
@@ -23,7 +25,7 @@ def to_rel_path(path_value: str, cwd: str) -> str:
     return normalized
 
 
-raw_input = sys.stdin.read()
+raw_input = os.environ.get("HOOK_INPUT_JSON", "")
 try:
     payload = json.loads(raw_input)
 except Exception:
@@ -70,6 +72,6 @@ response = {
     },
     "systemMessage": message,
 }
-print(json.dumps(response), file=sys.stderr)
+print(json.dumps(response))
 sys.exit(2)
 PY

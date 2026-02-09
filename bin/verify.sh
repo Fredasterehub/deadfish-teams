@@ -58,6 +58,9 @@ emit_preflight_json_and_exit() {
     "phase": "preflight"
   }
 }
+EOF
+  exit "$exit_code"
+}
 
 emit_internal_error_fallback() {
   local exit_code="$1"
@@ -66,9 +69,6 @@ emit_internal_error_fallback() {
 }
 
 trap 'status=$?; if [[ "${JSON_EMITTED}" != "true" ]]; then emit_internal_error_fallback "${status:-1}"; fi' EXIT
-EOF
-  exit "$exit_code"
-}
 
 # ── CLI / Configuration ────────────────────────────────────────────────────
 usage() {
