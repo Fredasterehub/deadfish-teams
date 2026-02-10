@@ -14,6 +14,20 @@ description: Implementation constraints, git conventions, Codex MCP usage.
 - Maximum 3 fix cycles per task. On failure, produce failure report and stop.
 - Single commit per task: `"{task_id}: {short title}"`
 
+## Living Docs Hot Exception
+- Default rule: do not churn `docs/living/*` during per-task implementation.
+- Hot exception (only one): `docs/living/TECH_STACK.md`.
+- TECH_STACK may be updated in-task only when it is explicitly listed in `TASK.FILES` (typically alongside dependency manifest/lockfile changes).
+- No other living-doc file is allowed as an in-task exception unless Lead explicitly amends the task packet.
+
+## TaskCompleted Hook vs QA Protocol
+- "TaskCompleted hook runs `verify.sh` only" refers to hook execution scope, not final QA scope.
+- QA order remains:
+  1. `verify.sh` deterministic gate
+  2. criteria fan-out for acceptance checks
+  3. build-verdict aggregation
+- Do not treat hook completion as equivalent to a final PASS verdict.
+
 ## Codex MCP Usage
 
 Start implementation:

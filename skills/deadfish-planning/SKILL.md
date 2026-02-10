@@ -10,6 +10,7 @@ description: Spec, plan, and task packet formats. GSD rules. Drift detection.
 - **Aggressive atomicity**: 2-5 tasks per track, ≤200 diff lines each, ≤5 files per task.
 - **Every SPEC AC in exactly one task**: No gaps, no duplicates.
 - **Context budget**: files_to_load ≤3000 tokens per task packet.
+- **Dependency-change pairing**: If a task changes dependency manifests or lockfiles, that same task packet MUST include `docs/living/TECH_STACK.md` in `## FILES` and update it in-task.
 
 ## SPEC Format
 Write to `tracks/{track_id}/SPEC.md`:
@@ -82,3 +83,12 @@ When `base_commit` from PLAN ≠ current HEAD:
 - If cosmetic: CONTINUE (adapt bindings)
 - If structural: REPLAN
 - Acceptance criteria NEVER change on drift — only bindings adapt.
+
+## Dependency Manifest Guard
+When composing `## FILES`, treat dependency manifests/lockfiles as a special planning trigger.
+
+If any task includes a dependency manifest or lockfile (for example `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile.lock`, `go.mod`, `go.sum`, `Cargo.toml`, `Cargo.lock`):
+- include `docs/living/TECH_STACK.md` in the same task packet `## FILES`
+- set it to `action: modify`
+- state rationale as dependency/version update traceability
+- require TASK `## SUMMARY` to explicitly say TECH_STACK is updated in-task
