@@ -56,15 +56,22 @@ run_protected_write_tests() {
   output="$(printf '%s' "${input_protected}" | bash "${script}" 2>&1)"
   rc=$?
   set -e
-  [[ ${rc} -eq 2 ]] || fail "protected path should be denied (rc=${rc}, output=${output})"
+  [[ ${rc} -eq 0 ]] || fail "protected path hook should exit 0 with JSON deny (rc=${rc}, output=${output})"
   python3 - "${output}" <<'PY'
 import json
 import sys
 
 payload = json.loads(sys.argv[1])
-decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+hook_output = payload.get("hookSpecificOutput", {})
+decision = hook_output.get("permissionDecision")
 if decision != "deny":
     raise SystemExit(f"expected permissionDecision=deny, got: {decision}")
+event_name = hook_output.get("hookEventName")
+if event_name != "PreToolUse":
+    raise SystemExit(f"expected hookEventName=PreToolUse, got: {event_name}")
+reason = hook_output.get("permissionDecisionReason", "")
+if "bin/verify.sh" not in reason:
+    raise SystemExit(f"expected protected path in permissionDecisionReason, got: {reason}")
 message = payload.get("systemMessage", "")
 if "bin/verify.sh" not in message:
     raise SystemExit(f"expected protected path in systemMessage, got: {message}")
@@ -84,7 +91,16 @@ PY
   output="$(printf '%s' "${input_abs}" | bash "${script}" 2>&1)"
   rc=$?
   set -e
-  [[ ${rc} -eq 2 ]] || fail "absolute protected path should be denied (rc=${rc}, output=${output})"
+  [[ ${rc} -eq 0 ]] || fail "absolute protected path hook should exit 0 with JSON deny (rc=${rc}, output=${output})"
+  python3 - "${output}" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+if decision != "deny":
+    raise SystemExit(f"expected permissionDecision=deny for absolute path, got: {decision}")
+PY
 }
 
 write_verify_stub() {

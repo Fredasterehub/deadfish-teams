@@ -10,14 +10,20 @@ import sys
 from pathlib import Path
 
 
-def to_rel_path(path_value: str, cwd: str) -> str:
+def to_rel_path(path_value: str, anchors: list[str]) -> str:
     raw = Path(path_value)
     if raw.is_absolute():
-        try:
-            rel = raw.resolve().relative_to(Path(cwd).resolve())
-            normalized = rel.as_posix()
-        except Exception:
-            normalized = raw.as_posix()
+        resolved = raw.resolve()
+        normalized = raw.as_posix()
+        for anchor in anchors:
+            if not anchor:
+                continue
+            try:
+                rel = resolved.relative_to(Path(anchor).resolve())
+                normalized = rel.as_posix()
+                break
+            except Exception:
+                continue
     else:
         normalized = os.path.normpath(path_value).replace("\\", "/")
     if normalized.startswith("./"):
@@ -40,7 +46,8 @@ cwd = payload.get("cwd")
 if not isinstance(cwd, str) or not cwd:
     cwd = os.getcwd()
 
-candidate = to_rel_path(file_path, cwd)
+plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("DEADFISH_PLUGIN_ROOT") or ""
+candidate = to_rel_path(file_path, [cwd, plugin_root])
 
 protected_exact = {
     "bin/verify.sh",
@@ -62,16 +69,18 @@ is_protected = candidate in protected_exact or any(
 if not is_protected:
     sys.exit(0)
 
-message = (
-    f"Protected file edit denied: {candidate}. "
+reason = (
+    f"Protected file edit denied for '{candidate}'. "
     "This file is locked by deadfish verification/hook integrity policy."
 )
 response = {
     "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
     },
-    "systemMessage": message,
+    "systemMessage": reason,
 }
 print(json.dumps(response))
-sys.exit(2)
+sys.exit(0)
 PY

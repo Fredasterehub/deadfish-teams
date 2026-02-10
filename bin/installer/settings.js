@@ -37,7 +37,11 @@ function shellDoubleQuote(value) {
 function buildHookCommand(pluginRoot, scriptName) {
   const escapedRoot = shellDoubleQuote(pluginRoot);
   const escapedScript = shellDoubleQuote(path.join(pluginRoot, 'hooks', 'scripts', scriptName));
-  return `DEADFISH_PLUGIN_ROOT=\"${escapedRoot}\" bash \"${escapedScript}\"`;
+  return (
+    `CLAUDE_PLUGIN_ROOT=\"${escapedRoot}\" ` +
+    `DEADFISH_PLUGIN_ROOT=\"${escapedRoot}\" ` +
+    `bash \"${escapedScript}\"`
+  );
 }
 
 function ensureObjectOrThrow(container, keyPath) {
