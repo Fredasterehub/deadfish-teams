@@ -26,7 +26,7 @@
 | Coder | Sonnet | Per track | Implements one packet at a time via GPT-5.3-Codex (`codex-coder` MCP). |
 | QA | Sonnet | Per track | verify.sh + criteria + verdict. Pessimistic by design. |
 | Conductor | Opus | Persistent | Drift, boundaries, stuck arbitration. "Are we building the right thing?" |
-| Doc-keeper | Haiku | Persistent | Living docs. Significance-gated. 7 files + scratch buffer. |
+| Doc-keeper | Haiku | Persistent | Track-boundary living-doc reconciliation proposals only (7 files). |
 | Integrator | Sonnet | On-demand | Cross-task friction only. Sutures, not surgery. |
 
 ## Flow
@@ -42,9 +42,11 @@
 ### Phase 2: Autonomous (delegate mode)
 Lead presses Shift+Tab. For each track:
 
-**PLAN:** Spawn Planner → SPEC + PLAN + packets → Conductor evaluates → Planner shuts down
-**EXECUTE:** Lead converts Task Graph to native Tasks with dependencies. For each packet, Lead runs `bin/packet-to-task.py <packet_path>` and uses that output verbatim as the Task description. On retry, Lead appends QA feedback AFTER the original description. Coder claims → implements → QA verifies → Doc-keeper reflects. On 2x fail → Conductor arbitrates.
-**BOUNDARY:** Conductor evaluates track completion → CONTINUE | ADAPT | REPLAN | ESCALATE. Workers shut down. Next track.
+**PLAN:** Spawn Planner -> SPEC + PLAN + packets -> Conductor evaluates -> Planner shuts down
+
+**EXECUTE:** Lead converts Task Graph to native Tasks with dependencies. For each packet, Lead runs `bin/packet-to-task.py <packet_path>` and uses that output verbatim as the Task description. On retry, Lead appends QA feedback AFTER the original description. Coder claims -> implements. TaskCompleted hook enforces per-task `verify.sh` gate (verify only). QA protocol remains: `verify.sh` first, then criteria fan-out, then `build-verdict.py` aggregation. On 2x fail -> Conductor arbitrates.
+
+**BOUNDARY:** Conductor evaluates track completion -> CONTINUE | ADAPT | REPLAN | ESCALATE. On track-complete `CONTINUE`, Conductor writes `.deadfish/reconcile/<track_id>.trigger` and requests Doc-keeper reconciliation. Debate wiring: Reviewer A = Conductor (Opus), Reviewer B = Planner (GPT-5.2 via `codex-planner`), apply+commit owner = Integrator.
 
 ## Lifecycle
 
@@ -78,8 +80,8 @@ Paste this to start:
     4) coder: implements TASK packets; runs bin/verify.sh; commits per task
     5) qa-reviewer: runs bin/verify.sh + acceptance criteria checks; produces VERDICT
     6) conductor: drift + boundary evaluation; produces CONDUCTOR verdicts
-    7) doc-keeper: updates living docs only after PASS verdict
-    8) integrator: resolves cross-task friction ONLY when requested by Lead
+    7) doc-keeper: track-boundary reconciliation proposals only (triggered by conductor)
+    8) integrator: resolves cross-task friction and applies approved reconciliation diffs + commit
 
     Rules:
     - I (Lead) operate in delegate mode and will not edit code.

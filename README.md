@@ -97,6 +97,8 @@ Deadfish takes GSD's structural DNA and adds what I felt was missing: **multi-mo
 ```
 
 That loop &mdash; **plan → implement → verify → verdict** &mdash; runs for every task. No exceptions.
+Task completion is hard-gated by the `TaskCompleted` hook running `verify.sh` (deterministic gate only), then QA runs criteria fan-out and verdict aggregation.
+After each track, Conductor runs a boundary evaluation; on `CONTINUE`, doc reconciliation is triggered.
 
 The verification script ([`verify.sh`](./bin/verify.sh)) is law: if it says FAIL, no amount of LLM confidence overrides it. 🚫🤖
 
@@ -110,7 +112,7 @@ Your agents use **different models for different jobs**:
 | ⚡ **Coder** | GPT-5.3-Codex | Fastest code generation, scoped to one task |
 | 🔍 **QA** | Sonnet | Pessimistic by design &mdash; runs the hard gate |
 | 🧭 **Conductor** | Opus | Drift detection: *"are we still building the right thing?"* |
-| 📝 **Doc-keeper** | Haiku | Maintains 7 living docs, budget-capped |
+| 📝 **Doc-keeper** | Haiku | Track-boundary reconciler for 7 living docs |
 | 🔬 **Discoverer** | Sonnet | Brownfield detection before planning starts |
 
 > 💡 **State lives in files and tasks, not chat history.** Session crashes? Reopen. The task list is still there.
@@ -127,8 +129,8 @@ node deadfish-teams/bin/install.js --local
 
 Then open Claude Code in your project, paste the kickoff prompt from [`CLAUDE.md`](./CLAUDE.md), press **Shift+Tab** for delegate mode, and give it a goal. That's it. 🎬
 
-By default, installs run in **Deadfish Lite** mode (Planner + Coder + QA + Integrator).<br/>
-Opt in to **Deadfish Full Team** with `--team-mode full`.
+By default, installs run in **Deadfish Full Team** mode (Discoverer + Brainstormer + Planner + Coder + QA + Conductor + Doc-keeper + Integrator).<br/>
+Use `--team-mode lite` if you want only Planner + Coder + QA + Integrator.
 
 <details>
 <summary>📖 <strong>Full install guide + all options</strong></summary>
@@ -146,7 +148,7 @@ node bin/install.js init    # asks 6 questions, sets everything up
 ```bash
 node bin/install.js --global                      # defaults, global scope
 node bin/install.js --local --provider hybrid     # local, hybrid routing
-node bin/install.js --local --team-mode full      # opt in to full roster
+node bin/install.js --local --team-mode lite      # optional lean roster
 node bin/install.js --uninstall                   # clean removal
 node bin/install.js --local --dry-run             # preview without writing
 ```
@@ -167,6 +169,11 @@ node bin/install.js --local --dry-run             # preview without writing
     ├── manifest.json        SHA-256 hashes of every file
     └── backups/<timestamp>/ your edits, preserved on upgrade
 ```
+
+Runtime state is created in your project root under `.deadfish/`:
+- `.deadfish/conductor/<track_id>.yaml` for conductor evaluation history
+- `.deadfish/reconcile/<track_id>.trigger` and `.deadfish/reconcile/<track_id>.yaml` for track-boundary doc reconciliation
+- `.deadfish/session/<task_list_id>/STATE_SNAPSHOT.md` for compaction/session rehydration
 
 ### Prerequisites
 
@@ -343,6 +350,10 @@ The QA agent evaluates each acceptance criterion with a **three-tier rubric**:
 
 All three must pass. Intentionally pessimistic: false negatives are OK, false positives are expensive. 🎯
 
+TECH_STACK hot exception (the only per-task living-doc exception):
+- If a task changes dependency manifests/lockfiles, that task must include `docs/living/TECH_STACK.md` in `TASK.FILES` and update it in-task.
+- No other `docs/living/*` file is a per-task exception.
+
 </details>
 
 <details>
@@ -355,6 +366,14 @@ Deadfish now includes deterministic compaction hooks:
 
 Track structure and fallback paths are documented here: [`docs/track-rehydration.md`](./docs/track-rehydration.md).<br/>
 Snapshot format reference: [`templates/track/state-snapshot.md`](./templates/track/state-snapshot.md).
+
+Hook timeouts in [`hooks/hooks.json`](./hooks/hooks.json) use **seconds**:
+- `PreToolUse` 5
+- `TaskCompleted` 180
+- `TeammateIdle` 2
+- `SubagentStop` 2
+- `PreCompact` 10
+- `SessionStart` 5
 
 </details>
 
@@ -382,7 +401,13 @@ Seven docs maintained by the Doc-keeper, each with a **character budget** to pre
 | [`WORKFLOW.md`](./docs/living/WORKFLOW.md) | 2,800 | CI/CD, scripts |
 | [`GLOSSARY.md`](./docs/living/GLOSSARY.md) | 2,000 | Domain terms |
 
-Updates only happen after a PASS verdict **and** a significance trigger (manifest change, large diff, new pattern). A [scratch buffer](./docs/living/.scratch.yaml) holds observations below threshold. 📋
+Updates are track-boundary only (not per-task):
+- Conductor writes `.deadfish/reconcile/<track_id>.trigger` on track-complete `CONTINUE`.
+- Doc-keeper proposes updates for all 7 docs.
+- Debate wiring: Reviewer A = Conductor (Opus), Reviewer B = Planner (GPT-5.2 via `codex-planner` MCP).
+- Integrator applies approved diffs, commits once, writes reconciliation record, and removes the trigger.
+
+Per-task exception: when dependency manifests/lockfiles change, the task must update [`TECH_STACK.md`](./docs/living/TECH_STACK.md) in-task.
 
 </details>
 
@@ -398,7 +423,7 @@ Updates only happen after a PASS verdict **and** a significance trigger (manifes
 | ⚡ **Coder** | GPT-5.3-Codex via MCP | Fastest code gen | Cannot skip verify.sh or modify specs |
 | 🔍 **QA** | Sonnet | Pessimism is a feature | Cannot optimistically approve |
 | 🧭 **Conductor** | Opus | Full-context drift reasoning | Cannot write code or modify tasks |
-| 📝 **Doc-keeper** | Haiku | Fast, cheap, gated | Cannot update docs without PASS |
+| 📝 **Doc-keeper** | Haiku | Fast, cheap, gated | Proposals only; no direct apply/commit |
 | 🔗 **Integrator** | Sonnet | Surgical cross-task fixes | Cannot redesign architecture |
 
 Agent definitions: [`agents/`](./agents/) &mdash; each is a short markdown file that references shared skills.
@@ -416,11 +441,15 @@ install:
   scope: 'global'
   provider: 'hybrid'
 team:
-  mode: 'lite'
+  mode: 'full'
   default_agents:
+    - 'discoverer'
+    - 'brainstormer'
     - 'planner'
     - 'coder'
     - 'qa-reviewer'
+    - 'conductor'
+    - 'doc-keeper'
     - 'integrator'
 models:
   planner: 'gpt-5.2'
@@ -431,14 +460,14 @@ features:
 task_list_id_pattern: 'deadfish-YYYYMMDD'
 ```
 
-Switch to the full roster with:
+Switch to lite mode with:
 
 ```bash
-node bin/install.js --local --team-mode full
+node bin/install.js --local --team-mode lite
 ```
 
-**Deadfish Lite (default):** planner, coder, qa-reviewer, integrator<br/>
-**Deadfish Full Team:** discoverer, brainstormer, planner, coder, qa-reviewer, conductor, doc-keeper, integrator
+**Deadfish Full Team (default):** discoverer, brainstormer, planner, coder, qa-reviewer, conductor, doc-keeper, integrator<br/>
+**Deadfish Lite:** planner, coder, qa-reviewer, integrator
 
 **`.mcp.json`** &mdash; Codex MCP servers (for `codex-mcp` / `hybrid`):
 ```json
