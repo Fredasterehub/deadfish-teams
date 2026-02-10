@@ -13,12 +13,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-0.3.2-blue?style=flat-square" alt="Version"/>
   <img src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node"/>
   <img src="https://img.shields.io/badge/python-3.x-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/tests-17%2F17_passing-brightgreen?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-5_suites_passing-brightgreen?style=flat-square" alt="Tests"/>
   <img src="https://img.shields.io/badge/agents-8_roles-blueviolet?style=flat-square" alt="Agents"/>
-  <img src="https://img.shields.io/badge/sentinel_types-11-orange?style=flat-square" alt="Sentinel Types"/>
+  <img src="https://img.shields.io/badge/sentinel_types-12-orange?style=flat-square" alt="Sentinel Types"/>
   <img src="https://img.shields.io/badge/Claude_Code-Agent_Teams_%F0%9F%86%95-7C3AED?style=flat-square" alt="Agent Teams NEW"/>
 </p>
 
@@ -79,7 +79,7 @@ What really stood out with Conductor was the constant reevaluation. Where other 
 
 GSD is the backbone. Plans-as-prompts, task packets, deterministic verification, scope limits &mdash; the closest thing to real engineering discipline for AI coding. The first versions were *incredible*: high quality, high speed, just raw execution. 🔥 Then it slowly got more complex &mdash; better quality in some ways, but a different vibe than the initial lightning-fast runs. Still super good. Just... different.
 
-Deadfish takes GSD's structural DNA and adds what I felt was missing: **multi-model routing** (5 different models matched to the right role), **living documentation** (7 budget-capped docs maintained automatically), and a **structured protocol** (11 sentinel types with schemas &mdash; not free-form text that LLMs can hallucinate past).
+Deadfish takes GSD's structural DNA and adds what I felt was missing: **multi-model routing** (5 different models matched to the right role), **living documentation** (7 budget-capped docs maintained automatically), and a **structured protocol** (12 sentinel types with schemas &mdash; not free-form text that LLMs can hallucinate past).
 
 </td>
 </tr>
@@ -267,7 +267,7 @@ Every unit of work follows the same cycle:
 │  8 agents + 7 skills + tool permissions            │
 ├───────────────────────────────────────────────────┤
 │  📡 LAYER 3: PROTOCOL                             │
-│  11 sentinel types + schemas + parse-blocks.py     │
+│  12 sentinel types + schemas + parse-blocks.py     │
 ├───────────────────────────────────────────────────┤
 │  📁 LAYER 2: ARTIFACTS                            │
 │  Git-tracked: spec, plan, packets, verdicts, docs  │
@@ -292,7 +292,7 @@ Instead of massive system prompts per agent, deadfish encodes rules as **shared 
 | [`deadfish-planning`](./skills/deadfish-planning/SKILL.md) | 📋 Spec/plan/packet format, scope limits (≤200 lines, ≤5 files) |
 | [`deadfish-verify`](./skills/deadfish-verify/SKILL.md) | ✅ verify.sh protocol, 3-tier rubric (EXISTS/SUBSTANTIVE/WIRED), verdict format |
 | [`deadfish-implement`](./skills/deadfish-implement/SKILL.md) | ⚡ Git conventions, retry protocol, Codex MCP usage |
-| [`deadfish-docs`](./skills/deadfish-docs/SKILL.md) | 📝 7 living doc files with character budgets, significance gate |
+| [`deadfish-docs`](./skills/deadfish-docs/SKILL.md) | 📝 Track-boundary reconciliation for 7 budget-capped living docs |
 | [`deadfish-conductor`](./skills/deadfish-conductor/SKILL.md) | 🧭 Drift detection, boundary evaluation, stuck arbitration |
 | [`deadfish-discovery`](./skills/deadfish-discovery/SKILL.md) | 🔬 Brownfield detection, evidence collection |
 
@@ -496,22 +496,21 @@ For `anthropic-only` mode, no MCP servers are configured.
 deadfish-teams/
 ├── agents/                    8 role definitions (.md)
 ├── skills/                    7 shared skills
-├── contracts/sentinel/v3/     protocol schemas
-├── templates/                 bootstrap, task, verify, repair
+├── contracts/                 sentinel v3 schemas + .deadfish/ contract
+├── templates/                 bootstrap, task, verify, track, rehydrate
 ├── bin/                       deterministic tools
 │   ├── verify.sh                the hard gate
 │   ├── parse-blocks.py          sentinel parser
 │   ├── build-verdict.py         verdict aggregator
 │   ├── packet-to-task.py        task packet → prompt
-│   ├── discover-detect.sh       brownfield classifier
-│   ├── discover-collect.sh      evidence collector
-│   └── installer/               install machinery
-├── hooks/                     lifecycle events
-├── docs/                      track memory + ADR reconciliation docs
-├── docs/living/               7 living docs
-├── tests/                     17 tests (smoke + installer)
+│   ├── new-track.py             track scaffolding
+│   ├── plan-to-packets.py       plan → task files
+│   └── installer/               install + config + settings
+├── hooks/                     6 lifecycle hooks (seconds-based timeouts)
+├── docs/                      track rehydration + ADR reconciliation
+├── docs/living/               7 budget-capped living docs
+├── tests/                     5 test suites (smoke, installer, hooks, verify-modes, tracks)
 ├── CLAUDE.md                  orchestrator contract
-├── package.json               npm manifest
 └── requirements.txt           Python deps
 ```
 
@@ -522,14 +521,12 @@ deadfish-teams/
 ## 📰 Latest changes
 
 <!-- BEGIN:LAST_UPDATES -->
-_Last refreshed: 2026-02-09 08:40 UTC_
+_Last refreshed: 2026-02-10_
 
-- 2026-02-09 &mdash; chore: clean repo for public release + new README (0a4c215)
-- 2026-02-09 &mdash; feat: Round 4 &mdash; npx installer, config gen, settings hooks, tests (efd7330)
-- 2026-02-09 &mdash; fix: port repair template to v3 + align sentinel type lists (1caf039)
-- 2026-02-09 &mdash; feat: Round 3 &mdash; discovery, tests, bootstrap, e2e smoke (1a696eb)
-- 2026-02-09 &mdash; feat: Round 2 &mdash; v3 tooling + active templates (c607ede)
-- 2026-02-09 &mdash; feat: Round 1 &mdash; v3 protocol foundation (e54b83e)
+- 2026-02-10 &mdash; **v3.2** &mdash; 10-task realignment: hooks integrity, verify.sh portability, .deadfish/ runtime schema, conductor persistence + boundary eval, track-boundary doc reconciliation with multi-model debate, TECH_STACK hot exception, installer defaults to full roster
+- 2026-02-09 &mdash; **v3.1** &mdash; compaction hooks, BMAD brainstormer, lite/full modes, ADR sentinel, enforcement hooks (6ffbf03)
+- 2026-02-09 &mdash; **v3.0** &mdash; rounds 1-4: protocol foundation, tooling, discovery, installer (e54b83e &rarr; efd7330)
+- 2026-02-09 &mdash; chore: clean repo for public release + narrative README (0a4c215, 3283011)
 <!-- END:LAST_UPDATES -->
 
 <sub>Auto-refreshed from git history &mdash; run <code>./scripts/update_readme_latest_updates.sh --n 7</code> to update.</sub>
@@ -539,8 +536,11 @@ _Last refreshed: 2026-02-09 08:40 UTC_
 ## 🧪 Tests
 
 ```bash
-bash tests/smoke-run.sh       # 12 protocol tests
-bash tests/test-installer.sh  # 7 installer tests
+bash tests/smoke-run.sh            # 12 protocol phases
+bash tests/test-installer.sh       # 7 installer scenarios
+bash tests/test-hooks.sh           # hook allow/deny coverage
+bash tests/test-verify-modes.sh    # exit code + scope enforcement
+bash tests/test-track-rehydrate.sh # track scaffolding + rehydration
 ```
 
 ---
