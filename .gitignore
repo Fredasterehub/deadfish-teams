@@ -13,6 +13,7 @@ build/
 .mcp.json
 deadfish.config.yaml
 .deadfish-install/
+.deadfish/
 
 # Dev-only
 prompt/
