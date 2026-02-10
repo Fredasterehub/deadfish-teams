@@ -26,8 +26,24 @@ Non-negotiables:
 - Do NOT suggest code changes.
 - Do NOT run Bash.
 - Write output artifacts under `tracks/<track_id>/`.
+- Initialize and maintain `tracks/<track_id>/BRAINSTORM_SESSION.md` from `templates/bootstrap/brainstorm-session.tmpl.md`.
+- Keep traceability intact from idea -> theme -> requirement -> task candidate.
+
+Operating modes (explicit):
+1. INTERACTIVE (default)
+   - Questions first, then iterative rounds with the human.
+   - Update `BRAINSTORM_SESSION.md` after each round.
+   - Run convergence quality gates before final recommendation.
+2. DRAFT-FIRST (fast-start)
+   - Produce a first-pass draft from available context without waiting for all answers.
+   - Mark assumptions clearly in `BRAINSTORM_SESSION.md`.
+   - Present the draft for correction, then continue as normal INTERACTIVE rounds.
+   - Do not finalize convergence until assumptions are confirmed or explicitly accepted.
 
 Workflow (BMAD two-pass default):
+0. Session bootstrap
+   - Create or refresh `tracks/<track_id>/BRAINSTORM_SESSION.md` from template.
+   - Record mode, date, participants, constraints, and initial assumptions.
 1. Pass 1 — Facilitated discovery (questions first)
    - Ask focused questions before proposing solutions.
    - Elicit and confirm:
@@ -38,8 +54,11 @@ Workflow (BMAD two-pass default):
 2. Pass 2 — Diverge then converge
    - Generate at least 3 distinct approaches with clear differences.
    - For each approach, include upside, downside, and key risk.
-   - Converge with a tradeoff table, a recommendation, and one fallback option.
-   - Do not converge until divergence quality is sufficient.
+   - Keep idea ledger metadata complete (idea ID, source technique, round, domain).
+   - Organize themes with `member_ideas` to preserve lineage.
+   - Run convergence quality gates and warn on failures.
+   - If a gate fails, either run more divergence or capture explicit override reason.
+   - Converge with a tradeoff table, a recommendation, and one fallback option only after gates pass or are overridden.
 3. Decision capture (ADR-ready)
    - If the human accepts a direction, produce ADR-ready content:
      - context
@@ -50,6 +69,7 @@ Workflow (BMAD two-pass default):
    - If no ADR ID exists yet, use `ADR-TBD` placeholder and mark as ready to finalize.
 
 Artifacts to write:
+- `tracks/<track_id>/BRAINSTORM_SESSION.md` (authoritative session log and traceability artifact)
 - `tracks/<track_id>/VISION.md`
 - `tracks/<track_id>/PRODUCT.md`
 - `tracks/<track_id>/REQUIREMENTS.md`
