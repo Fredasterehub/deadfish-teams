@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${DEADFISH_PLUGIN_ROOT:-}" ]]; then
-  echo "ERROR: DEADFISH_PLUGIN_ROOT is not set. Export it to the deadfish plugin root." >&2
+plugin_root="${CLAUDE_PLUGIN_ROOT:-${DEADFISH_PLUGIN_ROOT:-}}"
+if [[ -z "${plugin_root}" ]]; then
+  echo "ERROR: CLAUDE_PLUGIN_ROOT or DEADFISH_PLUGIN_ROOT must be set to the deadfish plugin root." >&2
   exit 1
 fi
 
-plugin_root="${DEADFISH_PLUGIN_ROOT}"
 task_list_id="${CLAUDE_CODE_TASK_LIST_ID:-default}"
 
 resolve_project_root() {
@@ -55,6 +55,11 @@ resolve_snapshot_path() {
   local track_id="$2"
   local pointer_file="${plugin_root}/.signals/${task_list_id}/latest-snapshot-path.txt"
 
+  if [[ -f "${project_root}/.deadfish/session/${task_list_id}/STATE_SNAPSHOT.md" ]]; then
+    printf '%s\n' "${project_root}/.deadfish/session/${task_list_id}/STATE_SNAPSHOT.md"
+    return
+  fi
+
   if [[ -f "${pointer_file}" ]]; then
     local pointed_path
     pointed_path="$(head -n 1 "${pointer_file}")"
@@ -66,11 +71,6 @@ resolve_snapshot_path() {
 
   if [[ -n "${track_id}" && -f "${project_root}/tracks/${track_id}/STATE_SNAPSHOT.md" ]]; then
     printf '%s\n' "${project_root}/tracks/${track_id}/STATE_SNAPSHOT.md"
-    return
-  fi
-
-  if [[ -f "${project_root}/.deadfish/session/${task_list_id}/STATE_SNAPSHOT.md" ]]; then
-    printf '%s\n' "${project_root}/.deadfish/session/${task_list_id}/STATE_SNAPSHOT.md"
     return
   fi
 

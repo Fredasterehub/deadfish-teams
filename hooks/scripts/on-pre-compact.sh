@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${DEADFISH_PLUGIN_ROOT:-}" ]]; then
-  echo "ERROR: DEADFISH_PLUGIN_ROOT is not set. Export it to the deadfish plugin root." >&2
+plugin_root="${CLAUDE_PLUGIN_ROOT:-${DEADFISH_PLUGIN_ROOT:-}}"
+if [[ -z "${plugin_root}" ]]; then
+  echo "ERROR: CLAUDE_PLUGIN_ROOT or DEADFISH_PLUGIN_ROOT must be set to the deadfish plugin root." >&2
   exit 1
 fi
 
-plugin_root="${DEADFISH_PLUGIN_ROOT}"
 task_list_id="${CLAUDE_CODE_TASK_LIST_ID:-default}"
 
 resolve_project_root() {
@@ -214,17 +214,13 @@ if [[ -n "${track_id}" && -d "${project_root}/tracks/${track_id}" ]]; then
 fi
 
 snapshot_file=""
-if [[ -n "${track_dir}" ]]; then
-  snapshot_file="${track_dir}/STATE_SNAPSHOT.md"
+canonical_dir="${project_root}/.deadfish/session/${task_list_id}"
+if mkdir -p "${canonical_dir}" 2>/dev/null; then
+  snapshot_file="${canonical_dir}/STATE_SNAPSHOT.md"
 else
-  fallback_dir="${project_root}/.deadfish/session/${task_list_id}"
-  if mkdir -p "${fallback_dir}" 2>/dev/null; then
-    snapshot_file="${fallback_dir}/STATE_SNAPSHOT.md"
-  else
-    fallback_dir="${plugin_root}/.signals/${task_list_id}"
-    mkdir -p "${fallback_dir}"
-    snapshot_file="${fallback_dir}/STATE_SNAPSHOT.md"
-  fi
+  fallback_dir="${plugin_root}/.signals/${task_list_id}"
+  mkdir -p "${fallback_dir}"
+  snapshot_file="${fallback_dir}/STATE_SNAPSHOT.md"
 fi
 
 mkdir -p "$(dirname "${snapshot_file}")"
