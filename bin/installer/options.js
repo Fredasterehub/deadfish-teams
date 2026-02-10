@@ -2,7 +2,7 @@ const readline = require("readline/promises");
 
 const DEFAULTS = Object.freeze({
   provider: "hybrid",
-  teamMode: "lite",
+  teamMode: "full",
   plannerModel: "gpt-5.2",
   coderModel: "gpt-5.3-codex",
   qaModel: "gpt-5.3-codex",
@@ -12,6 +12,7 @@ const DEFAULTS = Object.freeze({
 
 const PROVIDERS = new Set(["anthropic-only", "codex-mcp", "hybrid"]);
 const TEAM_MODES = new Set(["lite", "full"]);
+const LITE_MODE_WARNING = "Lite mode disables Conductor + Doc-keeper. Living docs will not auto-update. Drift detection disabled.";
 
 /**
  * @typedef {Object} Options
@@ -61,6 +62,7 @@ function requireValue(argv, index, flagName) {
  */
 function parseArgs(argv, env) {
   const envScope = parseScopeValue(env.DEADFISH_INSTALL_SCOPE || "");
+  let teamModeSetByFlag = false;
   /** @type {Options} */
   const options = {
     command: "install",
@@ -138,6 +140,7 @@ function parseArgs(argv, env) {
         );
       }
       options.teamMode = value;
+      teamModeSetByFlag = true;
       i += 1;
       continue;
     }
@@ -170,6 +173,10 @@ function parseArgs(argv, env) {
       throw new Error(`Unknown flag: ${arg}`);
     }
     throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  if (teamModeSetByFlag && options.teamMode === "lite") {
+    console.warn(`WARNING: ${LITE_MODE_WARNING}`);
   }
 
   return options;

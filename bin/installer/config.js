@@ -84,7 +84,7 @@ function resolveTeamMode(options) {
   if (teamMode === 'full' || teamMode === 'lite') {
     return teamMode;
   }
-  return 'lite';
+  return 'full';
 }
 
 /**
