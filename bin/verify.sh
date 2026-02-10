@@ -153,6 +153,10 @@ case "$MODE" in
     ;;
 esac
 
+if [[ "$MODE" == "post-commit" && -z "$BASE_COMMIT" ]]; then
+  emit_preflight_json_and_exit false 1 "post-commit mode requires --base-commit (or VERIFY_BASE_COMMIT)"
+fi
+
 # ── Task Discovery ─────────────────────────────────────────────────────────
 DEADF_ROOT="${VERIFY_DEADF_ROOT:-${PROJECT_DIR:-$(pwd)}}"
 STATE_FILE="${DEADF_ROOT}/STATE.yaml"
@@ -268,15 +272,9 @@ resolve_diff_base() {
       DIFF_BASE_REF="$BASE_COMMIT"
     else
       add_failure "base_commit invalid or not found: $BASE_COMMIT"
-      if git rev-parse --verify HEAD^{commit} &>/dev/null; then
-        DIFF_BASE_REF="HEAD"
-      fi
     fi
-  elif git rev-parse --verify HEAD^{commit} &>/dev/null; then
+  elif [[ "$MODE" == "pre-commit" ]] && git rev-parse --verify HEAD^{commit} &>/dev/null; then
     DIFF_BASE_REF="HEAD"
-    if [[ "$MODE" == "post-commit" ]]; then
-      log "WARN: --base-commit not set in post-commit mode; using HEAD"
-    fi
   fi
 }
 
@@ -376,7 +374,21 @@ parse_task_file() {
 
   # v1 compat (accepted): path=src/foo.ts action=add
   if [[ ${#TASK_ALLOWED_PATHS[@]} -eq 0 ]]; then
-    mapfile -t TASK_ALLOWED_PATHS < <(grep -oP 'path=\K[^\s]+' "$task_file" 2>/dev/null || true)
+    mapfile -t TASK_ALLOWED_PATHS < <(
+      awk '
+        {
+          for (i = 1; i <= NF; i++) {
+            if ($i ~ /^path=/) {
+              path_field = $i
+              sub(/^path=/, "", path_field)
+              if (path_field != "") {
+                print path_field
+              }
+            }
+          }
+        }
+      ' "$task_file" 2>/dev/null || true
+    )
   fi
 
   # ESTIMATED_DIFF from frontmatter, section, or inline yaml-like key.
@@ -429,23 +441,23 @@ check_tests() {
     # Try to extract test count from common output formats
     # pytest: "X passed, Y failed" or "X passed"
     # jest/mocha: "X passing" / "X failing"
-    if echo "$test_output" | grep -qP '\d+ passed'; then
+    if echo "$test_output" | grep -qE '[0-9]+[[:space:]]+passed'; then
       local passed failed
-      passed=$(echo "$test_output" | grep -oP '\d+(?= passed)' | tail -1)
-      failed=$(echo "$test_output" | grep -oP '\d+(?= failed)' | tail -1)
+      passed=$(echo "$test_output" | sed -nE 's/.*([0-9]+)[[:space:]]+passed.*/\1/p' | tail -1)
+      failed=$(echo "$test_output" | sed -nE 's/.*([0-9]+)[[:space:]]+failed.*/\1/p' | tail -1)
       failed="${failed:-0}"
       test_count=$((passed + failed))
       test_summary="${passed} passed, ${failed} failed"
-    elif echo "$test_output" | grep -qP '\d+ passing'; then
+    elif echo "$test_output" | grep -qE '[0-9]+[[:space:]]+passing'; then
       local passing failing
-      passing=$(echo "$test_output" | grep -oP '\d+(?= passing)' | tail -1)
-      failing=$(echo "$test_output" | grep -oP '\d+(?= failing)' | tail -1)
+      passing=$(echo "$test_output" | sed -nE 's/.*([0-9]+)[[:space:]]+passing.*/\1/p' | tail -1)
+      failing=$(echo "$test_output" | sed -nE 's/.*([0-9]+)[[:space:]]+failing.*/\1/p' | tail -1)
       failing="${failing:-0}"
       test_count=$((passing + failing))
       test_summary="${passing} passed, ${failing} failed"
-    elif echo "$test_output" | grep -qP 'Tests:\s+\d+'; then
+    elif echo "$test_output" | grep -qE 'Tests:[[:space:]]+[0-9]+'; then
       # Jest summary line: Tests: X passed, Y total
-      test_count=$(echo "$test_output" | grep -oP 'Tests:\s+.*?(\d+)\s+total' | grep -oP '\d+(?=\s+total)' | tail -1)
+      test_count=$(echo "$test_output" | sed -nE 's/.*Tests:[[:space:]].*([0-9]+)[[:space:]]+total.*/\1/p' | tail -1)
       test_count="${test_count:-0}"
       test_summary="exit code $test_exit ($test_count tests detected)"
     else
@@ -592,7 +604,7 @@ check_paths() {
 
     # Check against blocked patterns
     for pattern in "${blocked_patterns[@]}"; do
-      if echo "$f" | grep -qP "$pattern"; then
+      if echo "$f" | grep -qE "$pattern"; then
         blocked_files+=("$f")
         hard_blocked_files+=("$f")
         paths_ok=false
@@ -657,11 +669,11 @@ check_secrets() {
     'glpat-[a-zA-Z0-9\-]{20}'                   # GitLab PAT
     'xox[bpras]-[a-zA-Z0-9\-]+'                 # Slack tokens
     # Generic patterns
-    '["\x27]?[a-zA-Z_]*(?:SECRET|TOKEN|KEY|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY)["\x27]?\s*[=:]\s*["\x27][^\s"'\'']{8,}["\x27]'
+    "['\"]?[a-zA-Z_]*(SECRET|TOKEN|KEY|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY)['\"]?[[:space:]]*[=:][[:space:]]*['\"][^[:space:]'\"]{8,}['\"]"
     # Private keys
     '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
     # Connection strings
-    '(?:mysql|postgres|mongodb|redis)://[^\s]{10,}'
+    '(mysql|postgres|mongodb|redis)://[^[:space:]]{10,}'
   )
 
   # Only scan added lines (lines starting with +, but not +++ header)
@@ -670,7 +682,7 @@ check_secrets() {
 
   for pattern in "${patterns[@]}"; do
     local matches
-    matches=$(echo "$added_lines" | grep -oP "$pattern" 2>/dev/null || true)
+    matches=$(echo "$added_lines" | grep -oE "$pattern" 2>/dev/null || true)
     if [[ -n "$matches" ]]; then
       secrets_found=true
       while IFS= read -r match; do
